@@ -1,0 +1,998 @@
+---
+title: 'Replication Desmond 2015'
+author: "Jan Pfänder"
+date: "2023-05-08"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default
+---
+
+```{r packages, message=FALSE, warning=FALSE}
+# load required packages
+library("tidyverse")
+library("readxl") 
+library("mice")
+```
+
+This is a script to replicate a finding in Desmond 2015. 
+
+> *"Claim: ... renters who experienced a forced move relocate to poorer ... neighborhoods than those who move under less-demanding circumstances. (p. 751)"*
+
+## Data
+
+I rely on two main data sets
+
+- `mars`: The MARS survey, mainly used to compute the independent variable (`forced_move`) and controls. This is a merged data set from several files, all downloaded from [Harvard Dataverse](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/BLUU3U). 
+- `acs`: American Community Survey (ACS), used to compute the outcome variable (`poverty`). 2010 ACS 5-year estimates of the percentage of families in poverty in a certain neighborhood (by Census Block Group in Wisconsin). Data is downloaded from ACS legacy data file download site [at this link](https://www2.census.gov/acs2010_5yr/summaryfile/2006-2010_ACSSF_By_State_By_Sequence_Table_Subset/Wisconsin/Tracts_Block_Groups_Only/20105wi0047000.zip). Geographic identifiers are downloaded from [here](https://www2.census.gov/acs2010_5yr/summaryfile/2006-2010_ACSSF_By_State_By_Sequence_Table_Subset/Wisconsin/Tracts_Block_Groups_Only/g20105wi.csv). 
+
+## Variables
+
+The variables we need to replicate the analysis are:
+
+- `poverty_current`: Neighborhood poverty rate
+- `move_reason`: Reason for moving (forced, responsive, voluntary)
+- `race`: Race (black, hispanic, other)
+- `age` 
+- `education_less_than_highschool` : Education (Less Than High School Education)
+- `education_highschool` : Education (High School/GED)
+- `housing_asstiance`: Housing Assistance in Past Residence
+- `single_mom` :  Single-Mother Household in Past Residence
+- `criminal_record`: Criminal Record Before Move
+- `recent_child`: Had a Child in Previous 2 Years
+- `relationship_dissolution` : Relationship Dissolution Before Move in Previous 2 Years 
+- `job_loss`: Job Loss Before Move in Previous 2 Years 
+- `benefits_loss`: Public Benefits Sanction Before Move in Previous 2 Years 
+- `poverty_previous`: Lagged Dependent Variable
+
+```{r, include=FALSE}
+# make vector with target variable names
+variables <- c("poverty_current", "move_reason", "race", "age", "education_less_than_highschool", "education_highschool", "housing_assistance", "single_mom", "criminal_record", "recent_child", "relationship_dissolution", "job_loss", "benefits_loss", "poverty_previous", "weight")
+```
+
+### MARS
+
+```{r}
+# read data
+mars <- read.csv("data/MARS_data.csv")
+```
+
+About the data structure the "User's guide" of Mars provides explanations: 
+
+> *"Accordingly, the data structure entails previous addresses or “spells” clustered within respondents. The variable csid is the unique case identifier, and the variable hhindex_new indicates which “spell” or previous address to which data refer. All cross-sectional data are housed in rows where hhindex_new = 0, referring to a respondent’s address at the time of the survey (her or his “current address”). All retrospective data are housed in rows where hhindex_new = 1, 2, … n, where n refers to the number of addresses at which a respondent has lived in the previous two years. An hhindex_new value of 1 refers to a respondent’s last address; an hhindex_new value of 2 refers to the address the respondent lived in prior to the former address, and so on. Here, then, a “spell” corresponds to addresses, not time points."*
+
+I will first select and re-name key variables from the data frame. When not already available in the data set, I then construct target variables one by one. 
+
+#### Select and rename variables
+
+I start by renaming and selecting variables that we need to compute our target variables. 
+
+```{r}
+# Rename and select variables necessary to compute analysis variables
+mars <- mars %>% rename(
+  # Identification and other helper variables
+  ###
+  # Date of last move
+  date_last_move_month = A2_m,
+  date_last_move_year = A2_y,
+  # ID
+  id_case = csid,
+  id_housing = hhindex_new, 
+  # Recent move (to filter the relevant subset of the data)
+  recent = recentmove,
+  # Current Address Block Group (FIPS)
+  current_address = addr1_bg, 
+  # Previous Residence: Block Group (FIPS)
+  previous_address = past_addr_bg,
+  # Survey weights
+  weight = weight,
+  # reason for moving (forced, responsive, voluntary), 
+  ###
+  # Were you, or a person you were staying with, evicted? (1)
+  forced_1 = H1a,
+  # Did you, or a person you were staying with, receive an eviction notice while living at this place? (2)
+  forced_2 = H5a,
+  # Did you, or a person you were staying with, receive an eviction notice while living at this place? (3)
+  forced_3 = H14a,
+  # Did you move away from this place because you, or a person you were stay with, missed a rent payment and thought that if you didn’t move you would be evicted? (4)
+  forced_4 = H16a, 
+  # Did you move away from this place because the city condemned the building? (5)
+  forced_5 = H18a,
+  # Did you move away because the landlord went into foreclosure? (6d)
+  forced_6 = H19a_d, 
+  # Did you move away because the landlord raised the rent? (6a)
+  responsive_1 = H19a_a, 
+  # Did you move away because the neighborhood was too dangerous? (6b)
+  responsive_2 = H19a_b, 
+  # Did you move away because the landlord wouldn't fix anything? (6c)
+  responsive_3 = H19a_c, 
+  # race 
+  ###
+  # What is your race? (several variables, in case of several answers)
+  race_1 = J16_a,
+  race_2 = J16_b,
+  race_3 = J16_c,
+  race_4 = J16_d,
+  race_5 = J16_e,
+  # Are you Hispanic?
+  race_6 = J15,
+  # age 
+  ###
+  # How old are you?
+  age = J20,
+  # education
+  ###
+  # What is the highest level of schooling you have completed?
+  education = J12,
+  # housing_assistance
+  ###
+  # Did the federal, state, or local government help to pay your rent?
+  housing_assistance = F9a,
+  # single_mom 
+  ### 
+  # R'S GENDER
+  single_mom_gender = J41,
+  # When you lived at this place, did any adults over the age of 18 live with you?
+  single_mom_alone = G2a, 
+  # Number of children < 18 in HH (sum of E8* and E16)
+  single_mom_kids = numkidsHH,
+  # criminal_record 
+  ###
+  # Do you have a criminal record?
+  criminal_record = J38,
+  # Convicted of crime: Month
+  criminal_record_month = J39_a,
+  # Convicted of crime: Year
+  criminal_record_year = J39_b
+) %>% 
+  rename_with(
+    # recent_child
+    ###
+    # Child A-K:  How old is [fill heshe]? (rename all variables from a to k)
+    # YEARS
+    ~ str_replace(.x, "E6", "recent_child_year"), starts_with("E6") & ends_with("_a")) %>% 
+  rename_with(
+    # MONTHS IF LESS THAN 1 YEAR
+    ~ str_replace(.x, "E6", "recent_child_months"), starts_with("E6") & ends_with("_b")) %>% 
+  rename_with(
+    # relationship_dissolution
+    ###
+    # In what month and year did the most recent serious relationship end?
+    # month
+    ~ str_replace(.x, "J25", "relationship_dissolution_month"), starts_with("J25") & ends_with("_a")) %>% 
+  rename_with(
+    # year
+    ~ str_replace(.x, "J25", "relationship_dissolution_year"), starts_with("J25") & ends_with("_b")) %>% 
+  rename_with(
+    # job_loss
+    ###
+    # In what month and year were you most recently laid off or fired from a job?
+    # month
+    ~ str_replace(.x, "J28", "job_loss_month"), starts_with("J28") & ends_with("_a")) %>% 
+  rename_with(
+    # year
+    ~ str_replace(.x, "J28", "job_loss_year"), starts_with("J28") & ends_with("_b")) %>% 
+  rename_with(
+    # benefits_loss
+    ###
+    # In what month and year were your public assistance benefits most recently stopped or sanctioned?
+    # month
+    ~ str_replace(.x, "J32", "benefits_loss_month"), starts_with("J32") & ends_with("_a")) %>% 
+  rename_with(
+    # year
+    ~ str_replace(.x, "J32", "benefits_loss_year"), starts_with("J32") & ends_with("_b")) %>% 
+  # retain only variables of interest
+  select(contains("forced"), contains("responsive"), contains("race"), contains("address"), contains("weight"),
+                                  contains("age"), contains("education"), contains("housing_assistance"), 
+                                  contains("single_mom"), contains("criminal_record"), contains("recent_child"), 
+                                  contains("relationship_dissolution"), contains("job_loss"), 
+                                  contains("benefits_loss"), contains("date_last_move"), contains("id_case"), 
+                                  contains("id_housing"), contains("recent"))
+  
+```
+
+```{r}
+# Make strings more compatible
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(everything(), tolower)
+         )
+```
+
+#### Re-shape and subset the data
+
+I want to filter out the individuals that moved within two years before the survey. 
+
+```{r}
+# For now, several rows per id_case (because several houses), but only one 
+# row (the first) per id_case contains the value of recent. 
+# Make sure all rows per id_case contain the value of recent.
+mars <- mars %>% 
+  group_by(id_case) %>% 
+  # fill in all rows within id_case with the first row value
+  fill(recent, .direction = "down") %>% 
+  # remove grouping
+  ungroup %>% 
+  filter(recent == 1)
+```
+
+The addresses are marked by `id_housing`. The current address has the value `0`, the previous one has the value `1`. The row of the current address contains the values for most variables of interest. The row of the previous address contains information about the reason of the move. 
+
+I suppose there has only been one move within the period of interest, so I consider only the last previous address.
+
+I re-shape the data so that there is only one row per `id_case`. 
+
+```{r}
+# extract info for current address
+current_adress <- mars %>% filter(id_housing == 0) %>% 
+  # everything BUT moving reasons
+  select(-c(
+    starts_with(c("forced", "responsive")), 
+    housing_assistance, 
+    single_mom_alone, previous_address
+  )
+  )
+
+# extract info for previous address
+previous_adress <- mars %>% filter(id_housing == 1) %>% 
+  # moving reasons
+  select(id_case, starts_with(c("forced", "responsive")), 
+         housing_assistance, single_mom_alone, 
+         previous_address)
+
+# re-unite data
+mars <- left_join(current_adress, previous_adress, by = "id_case")
+```
+
+#### Build target variables
+
+##### Moving reason: forced and responsive move
+
+First, we clean all variables. 
+
+```{r}
+# check levels
+mars %>% select(starts_with(c("forced", "responsive"))) %>% 
+  pivot_longer(everything()) %>% 
+  group_by(name, value) %>% 
+  count()
+
+# mini cleaning function
+clean <- function (.x) case_when(.x == "yes"~ 1, 
+                      .x == "no" ~ 0, 
+                      TRUE ~ NA)
+
+# check cleaning method
+mars %>% 
+  mutate(
+    across(starts_with(c("forced", "responsive")), 
+           # apply cleaning function
+           clean, 
+           .names = "{col}_cleaned"
+    )
+  ) %>% 
+  select(starts_with("forced_1"))
+
+# apply cleaning
+mars <- mars %>% 
+  mutate(
+    across(starts_with(c("forced", "responsive")), 
+           # apply cleaning function
+           clean
+    )
+  )
+```
+
+We have several`forced_...` and `responsive_...` variables. For each of these two groups, we want a summary variable that indicates `TRUE` if any of the variables within the group yield `TRUE`. 
+
+```{r}
+# Create target variables
+mars <- mars %>%
+  rowwise() %>%
+  # Whenever there is at least one "yes" (= 1) response, code as 1,
+  # otherwise code 0
+  mutate(forced = sum(c_across(starts_with("forced")), na.rm = TRUE),
+         forced = ifelse(forced > 0, TRUE, FALSE),
+         responsive = sum(c_across(starts_with("responsive")), na.rm = TRUE),
+         responsive = ifelse(responsive > 0, TRUE, FALSE)
+  ) %>%
+  ungroup() %>% 
+  mutate(
+    # so far, overlap is possible between forced and responsive. 
+    # I will now prioritize forced
+    move_reason = case_when(forced == TRUE ~ "forced", 
+                            responsive == TRUE ~ "responsive", 
+                            TRUE ~ "voluntary/NA"),
+    # set different baseline level
+    move_reason = relevel(as.factor(move_reason), ref = "voluntary/NA"))
+```
+
+##### Race
+
+Clean and Re-code NA's
+
+```{r}
+# check levels
+mars %>% select(starts_with("race")) %>% 
+  pivot_longer(everything()) %>% 
+  group_by(name, value) %>% 
+  count()
+
+levels(as.factor(mars$race_6))
+```
+
+```{r}
+# define NA values
+NA_responses <- c("blank", "don't know", "refused", "-3", "")
+# mini function to assign NA's to values defined above
+recodeNAs <- function(x) (ifelse (x %in% NA_responses, NA, x))
+
+# recode NAs
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(starts_with("race"), recodeNAs)
+         )
+
+```
+
+Respondents could indicate several races. In the analysis, 3 groups were compared: Black, Hispanic and Other. 
+
+I assume that an individual can appear in both the Hispanic and the Black Group. For the outcome variable race, I will prioritize black, then hispanic over other.
+
+```{r}
+mars <- mars %>% 
+  mutate(
+    race_black = ifelse(
+    # if all NAs
+    if_all(starts_with("race"), is.na),
+    # code NA
+    NA,
+    # else code 1 if black and 0 if otherwise
+    if_any(starts_with("race") & !ends_with("6"),
+           ~str_detect(., "black")
+           )
+    ),
+    race_hispanic = ifelse(if_all(starts_with("race"), is.na),
+                             NA,
+                           ifelse(race_6 == "yes", TRUE, FALSE)
+                           ), 
+    race_other = ifelse(if_all(starts_with("race"), is.na),
+                             NA,
+                        (ifelse(
+                          (race_black == FALSE | is.na(race_black)) & 
+                            (race_hispanic == FALSE | is.na(race_hispanic)), 
+                          TRUE, FALSE)
+                         )
+                        )
+  ) %>% 
+  mutate(
+    # so far, overlap is possible between forced and responsive. 
+    # I will now prioritize forced
+    race = case_when(race_black == TRUE ~ "black", 
+                     race_hispanic == TRUE ~ "hispanic", 
+                     race_other == TRUE ~ "other",
+                     TRUE ~ NA),
+    # set different baseline level
+    race= relevel(as.factor(race), ref = "other"))
+
+# # check    
+# mars %>% filter((race_black == FALSE | is.na(race_black)) & (race_hispanic == FALSE | is.na(race_hispanic))) 
+```
+
+##### Age
+
+```{r}
+# check levels
+table(mars$age, useNA = "always")
+
+levels(as.factor(mars$age))
+```
+```{r}
+# clean
+mars <- mars %>% 
+  # For now, age is character variable. 
+  # This turns all non-numeric values into NAs
+  mutate(age = as.numeric(age)) 
+```
+
+##### Education
+
+```{r}
+# inspect levels
+table(mars$education, useNA = "always")
+
+levels(as.factor(mars$education))
+```
+```{r}
+# define NA values
+NA_responses <- c("blank", "don't know", "8", "refused")
+# mini function to assign NA's to values defined above
+recodeNAs <- function(x) (ifelse (x %in% NA_responses, NA, x))
+
+# recode NAs
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(education, recodeNAs)
+         )
+
+```
+
+The analysis distinguishes two categories: Less Than High School Education, High School/GED.
+
+I assume the baseline for - each of the two variables respectively - are all other levels. 
+```{r}
+less_than_highschool <- c("elementary school (1st through 8th grade)")
+highschool <- c("high school diploma", "ged")
+
+mars <- mars %>% 
+  mutate(education_less_than_highschool = ifelse(education %in% less_than_highschool, 
+                                                 TRUE, FALSE), 
+         education_highschool = ifelse(education %in% highschool, 
+                                                 TRUE, FALSE)
+         ) 
+```
+
+##### Housing Assitance
+
+```{r}
+# inspect levels
+table(mars$housing_assistance, useNA = "always")
+
+levels(as.factor(mars$housing_assistance))
+```
+
+```{r}
+# define valid values
+valid_responses <- c("no", "yes")
+# mini function to assign NA's to values defined above
+recodeNAs <- function(x) (ifelse (!x %in% valid_responses, NA, x))
+
+# recode NAs
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(housing_assistance, recodeNAs), 
+         housing_assistance = case_when(housing_assistance == "yes" ~ TRUE, 
+                                        housing_assistance == "no" ~ FALSE, 
+                                        TRUE ~ NA
+                                        )
+         )
+
+```
+
+##### Recent Child
+
+```{r}
+# check levels
+levels(as.factor(mars$recent_child_monthsa_b))
+
+# # for more extensive check
+# mars %>% select(starts_with("recent_child")) %>% 
+#   pivot_longer(everything()) %>% 
+#   group_by(name, value) %>% 
+#   count()
+```
+```{r}
+# define NA values
+NA_responses <- c("", "refused", "blank")
+# mini function to assign NA's to values defined above
+recodeNAs <- function(x) (ifelse (x %in% NA_responses, NA, x))
+
+# recode NAs
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(starts_with("recent_child"), recodeNAs), 
+         # transform to numeric
+         across(starts_with("recent_child"), as.numeric)
+         )
+```
+We calculate the exact age of each child. 
+```{r}
+# calculate exact age combining month and year
+exact_age <- mars %>% pivot_longer(starts_with("recent_child"), 
+                      names_to = "child", 
+                      values_to = "age_child") %>% 
+  # change the names of the variables slightly
+  mutate(child = gsub("(year|months)", "\\1_", child), 
+         child = sub("_[^_]*$", "", child)) %>%
+  # split at last underscore
+  separate(col = child, into = c("date", "pair"), 
+           sep = "_(?!.*_)", extra = "merge")  %>% 
+  select(id_case, date, pair, age_child) %>% 
+  pivot_wider(names_from = date, values_from = age_child) %>% 
+  # calculate all in months (multiply years by 12)
+  mutate(recent_child_year = recent_child_year*12) %>% 
+  rowwise() %>% 
+  # calculate exact age
+  mutate(recent_child_age = sum(c_across(starts_with("recent_child")), na.rm = TRUE),
+         # recode NAs
+         recent_child_age = ifelse(recent_child_age == 0, NA, recent_child_age)
+         )
+```
+
+We retain only the age of the youngest child (which determines the variable, namely whether there was at least one child within the last two years). If that value is smaller than or equal to 24 (months, i.e. two years) I code `TRUE` for the target variable `recent_child`. 
+
+```{r}
+# compute age of youngest child
+recent_child <- exact_age %>%  
+  group_by(id_case) %>% 
+    summarize(youngest_child_age = ifelse(all(is.na(recent_child_age)), 
+                                          NA, 
+                                          min(recent_child_age, na.rm = TRUE))) %>% 
+  # create target variable
+  mutate(recent_child = ifelse(youngest_child_age <= 24, TRUE, FALSE)) %>% 
+  select(id_case, recent_child)
+  
+
+# merge recent_child back into our data frame
+mars <- left_join(mars, recent_child)
+```
+
+##### Single mom
+
+We have to check several variables: 
+
+- Is respondent female? (`single_mom_gender == "female"`)
+- only adult in household (`single_mom_gender == 0`)
+- children under 18 (`single_mom_kids > 0`)
+
+```{r}
+# inspect levels
+table(mars$single_mom_gender, useNA = "always")
+
+# inspect levels
+table(mars$single_mom_alone, useNA = "always")
+
+# inspect levels
+table(mars$single_mom_kids, useNA = "always")
+```
+
+```{r}
+# define NA values
+NA_responses <- c("", "blank")
+# mini function to assign NA's to values defined above
+recodeNAs <- function(x) (ifelse (x %in% NA_responses, NA, x))
+
+# recode NAs
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(starts_with("single_mom"), recodeNAs), 
+         # transform to numeric
+         single_mom_kids = as.numeric(single_mom_kids)
+         )
+```
+
+```{r}
+# create single_mom variable
+mars <- mars %>% 
+  mutate(single_mom = ifelse(single_mom_gender == "female" & 
+                               single_mom_alone == 0 &
+                               single_mom_kids > 0, 
+                             TRUE, 
+                             ifelse(if_any(starts_with("single_mom"), is.na),
+                             NA, FALSE)
+                               )
+         ) 
+```
+
+##### Time last move
+
+Many control variables capture a situation *before the last move*. We make an exact measure in years.
+
+```{r}
+# inspect
+table(mars$date_last_move_year, useNA = "always")
+
+table(mars$date_last_move_month, useNA = "always")
+```
+
+
+```{r}
+# make variable of exact point of moving measured in years
+mars <- mars %>% mutate(
+  across(starts_with("date_last_move"), as.numeric),
+  date_last_move = date_last_move_year + date_last_move_month/12) 
+```
+
+
+##### Criminal Record
+
+We have to check if there was a criminal record *before the last move*. 
+
+```{r}
+# year
+levels(as.factor(mars$criminal_record_year))
+
+# month
+levels(as.factor(mars$criminal_record_month))
+```
+
+```{r}
+# define NA values
+NA_responses <- c("blank", "don't know", "refused", "")
+# mini function to assign NA's to values defined above
+recodeNAs <- function(x) (ifelse (x %in% NA_responses, NA, x))
+
+# recode NAs
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(starts_with("criminal"), recodeNAs)
+         )
+
+mars %>% select(starts_with("criminal"), starts_with("interview")) %>% filter(criminal_record == "yes")
+
+```
+
+```{r}
+# make variable of exact point of moving measured in years
+mars <- mars %>% mutate(
+  across(starts_with("criminal_record_"), as.numeric),
+  criminal_record_exact = criminal_record_year + criminal_record_month/12,
+  # create target variable
+  criminal_record = ifelse(date_last_move - criminal_record_exact <= 2 &
+                                date_last_move - criminal_record_exact >= 0, 
+                              TRUE,
+                              FALSE)
+  ) 
+```
+
+#####  Relationship dissolution
+
+```{r}
+# check levels
+levels(as.factor(mars$relationship_dissolution_yeara_b))
+
+# # for more extensive check
+# mars %>% select(starts_with("relationship_dissolution")) %>% 
+#   pivot_longer(everything()) %>% 
+#   group_by(name, value) %>% 
+#   count()
+```
+
+
+```{r}
+# define NA values
+NA_responses <- c("", "refused", "blank", "don't know")
+# mini function to assign NA's to values defined above
+recodeNAs <- function(x) (ifelse (x %in% NA_responses, NA, x))
+
+# recode NAs
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(starts_with("relationship_dissolution"), recodeNAs), 
+         # transform to numeric
+         across(starts_with("relationship_dissolution"), as.numeric)
+         )
+```
+
+We calculate the exact date for each relationship ending
+```{r}
+# calculate exact age combining month and year
+exact_relationship <- mars %>% pivot_longer(starts_with("relationship_dissolution"), 
+                      names_to = "relationship", 
+                      values_to = "date_relationship") %>% 
+  # change the names of the variables slightly
+  mutate(relationship = gsub("(year|month)", "\\1_", relationship), 
+         relationship = sub("_[^_]*$", "", relationship)) %>%
+  # split at last underscore
+  separate(col = relationship, into = c("date", "pair"), 
+           sep = "_(?!.*_)", extra = "merge")  %>% 
+  select(id_case, date, pair, date_relationship, date_last_move) %>% 
+  pivot_wider(names_from = date, values_from = date_relationship) %>% 
+  # calculate all in years (divide months by 12)
+  mutate(relationship_dissolution_month = relationship_dissolution_month/12) %>% 
+  rowwise() %>% 
+  # calculate exact date
+  mutate(relationship_dissolution_date = sum(c_across(starts_with("relationship_dissolution")), na.rm = TRUE),
+         # recode NAs
+         relationship_dissolution_date  = ifelse(relationship_dissolution_date == 0, NA, 
+                                                 relationship_dissolution_date)
+         )
+```
+
+We retain only the date of the most recent relationship dissolution (which determines the variable, namely whether there was at least one dissolution within the last two years from the date of the last move).
+
+```{r}
+# compute age of youngest child
+recent_relationship <- exact_relationship %>%  
+  group_by(id_case) %>% 
+    summarize(relationship_dissolution_date_most_recent = ifelse(all(is.na(relationship_dissolution_date)), 
+                                          NA, 
+                                          max(relationship_dissolution_date, 
+                                              na.rm = TRUE))) %>% 
+  select(id_case, relationship_dissolution_date_most_recent)
+  
+
+# merge recent_child back into our data frame
+mars <- left_join(mars, recent_relationship) %>% 
+  # create target variable
+  mutate(relationship_dissolution = ifelse(
+    date_last_move - relationship_dissolution_date_most_recent <= 2 &
+      date_last_move - relationship_dissolution_date_most_recent >= 0,
+    TRUE, FALSE))
+```
+
+#####  Job loss
+
+```{r}
+# check levels
+levels(as.factor(mars$job_loss_montha_a))
+
+# # for more extensive check
+# mars %>% select(starts_with("job_loss")) %>% 
+#   pivot_longer(everything()) %>% 
+#   group_by(name, value) %>% 
+#   count()
+```
+
+
+```{r}
+# define NA values
+NA_responses <- c("", "refused", "blank", "don't know")
+# mini function to assign NA's to values defined above
+recodeNAs <- function(x) (ifelse (x %in% NA_responses, NA, x))
+
+# recode NAs
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(starts_with("job_loss"), recodeNAs), 
+         # transform to numeric
+         across(starts_with("job_loss"), as.numeric)
+         )
+```
+
+We calculate the exact date for each job loss.
+```{r}
+# calculate exact age combining month and year
+exact_job_loss <- mars %>% pivot_longer(starts_with("job_loss"), 
+                      names_to = "job_loss", 
+                      values_to = "date_job_loss") %>% 
+  # change the names of the variables slightly
+  mutate(job_loss = gsub("(year|month)", "\\1_", job_loss), 
+         job_loss = sub("_[^_]*$", "", job_loss)) %>%
+  # split at last underscore
+  separate(col = job_loss, into = c("date", "pair"), 
+           sep = "_(?!.*_)", extra = "merge")  %>% 
+  select(id_case, date, pair, date_job_loss, date_last_move) %>% 
+  pivot_wider(names_from = date, values_from = date_job_loss) %>% 
+  # calculate all in years (divide months by 12)
+  mutate(job_loss_month = job_loss_month/12) %>% 
+  rowwise() %>% 
+  # calculate exact date
+  mutate(job_loss_date = sum(c_across(starts_with("job_loss")), na.rm = TRUE),
+         # recode NAs
+         job_loss_date  = ifelse(job_loss_date == 0, NA, 
+                                 job_loss_date)
+  )
+```
+
+We retain only the date of the most recent job loss (which determines the variable, namely whether there was at least one job loss within the last two years from the date of the last move).
+
+```{r}
+# compute age of youngest child
+recent_job_loss <- exact_job_loss %>%  
+  group_by(id_case) %>% 
+    summarize(job_loss_date_most_recent = ifelse(all(is.na(job_loss_date)), 
+                                          NA, 
+                                          max(job_loss_date, 
+                                              na.rm = TRUE))) %>% 
+  select(id_case, job_loss_date_most_recent)
+  
+
+# merge recent_child back into our data frame
+mars <- left_join(mars, recent_job_loss) %>% 
+  # create target variable
+  mutate(job_loss = ifelse(
+    date_last_move - job_loss_date_most_recent <= 2 &
+      date_last_move - job_loss_date_most_recent >= 0,
+    TRUE, FALSE))
+```
+
+#####  Benefits loss
+
+```{r}
+# check levels
+levels(as.factor(mars$benefits_loss_montha_a))
+
+# # for more extensive check
+# mars %>% select(starts_with("benefits_loss")) %>% 
+#   pivot_longer(everything()) %>% 
+#   group_by(name, value) %>% 
+#   count()
+```
+
+
+```{r}
+# define NA values
+NA_responses <- c("", "refused", "blank", "don't know")
+# mini function to assign NA's to values defined above
+recodeNAs <- function(x) (ifelse (x %in% NA_responses, NA, x))
+
+# recode NAs
+mars <- mars %>% 
+  # make sure answers written to lower case
+  mutate(across(starts_with("benefits_loss"), recodeNAs), 
+         # transform to numeric
+         across(starts_with("benefits_loss"), as.numeric)
+         )
+```
+
+We calculate the exact date for each benefits loss.
+```{r}
+# calculate exact age combining month and year
+exact_benefits_loss <- mars %>% pivot_longer(starts_with("benefits_loss"), 
+                      names_to = "benefits_loss", 
+                      values_to = "date_benefits_loss") %>% 
+  # change the names of the variables slightly
+  mutate(benefits_loss = gsub("(year|month)", "\\1_", benefits_loss), 
+         benefits_loss = sub("_[^_]*$", "", benefits_loss)) %>%
+  # split at last underscore
+  separate(col = benefits_loss, into = c("date", "pair"), 
+           sep = "_(?!.*_)", extra = "merge")  %>% 
+  select(id_case, date, pair, date_benefits_loss, date_last_move) %>% 
+  pivot_wider(names_from = date, values_from = date_benefits_loss) %>% 
+  # calculate all in years (divide months by 12)
+  mutate(benefits_loss_month = benefits_loss_month/12) %>% 
+  rowwise() %>% 
+  # calculate exact date
+  mutate(benefits_loss_date = sum(c_across(starts_with("benefits_loss")), na.rm = TRUE),
+         # recode NAs
+         benefits_loss_date  = ifelse(benefits_loss_date == 0, NA, 
+                                 benefits_loss_date)
+  )
+```
+
+We retain only the date of the most recent benefits loss (which determines the variable, namely whether there was at least one benefits loss within the last two years from the date of the last move).
+
+```{r}
+# compute age of youngest child
+recent_benefits_loss <- exact_benefits_loss %>%  
+  group_by(id_case) %>% 
+    summarize(benefits_loss_date_most_recent = ifelse(all(is.na(benefits_loss_date)), 
+                                          NA, 
+                                          max(benefits_loss_date, 
+                                              na.rm = TRUE))) %>% 
+  select(id_case, benefits_loss_date_most_recent)
+  
+
+# merge recent_child back into our data frame
+mars <- left_join(mars, recent_benefits_loss) %>% 
+  # create target variable
+  mutate(benefits_loss = ifelse(
+    date_last_move - benefits_loss_date_most_recent <= 2 &
+      date_last_move - benefits_loss_date_most_recent >= 0,
+    TRUE, FALSE))
+```
+
+### American Community Survey (ACS)
+
+#### ACS 5-year Wisconsin block groups by seq table
+```{r}
+acs_data <- read.csv("./data/e20105wi0047000.txt", header=F)
+```
+
+Add ACS column labels
+
+```{r}
+labels <- read_excel("./data/Seq47.xls")
+colnames(acs_data) <- labels %>% colnames()
+```
+
+#### ACS 5-year Wisconsin Geographies
+```{r}
+acs_geo <- read.csv("./data/g20105wi.csv", header = F) %>%
+  rename(LOGRECNO = V5,
+         GEOID = V49
+         ) %>%
+  select(c("LOGRECNO","GEOID")) %>% 
+  #convert GEOID to 12-digit FIPS
+  mutate(GEOID = substr(GEOID,8,20))
+
+# bla <- read_excel("./data/WI.xls") #%>% 
+#   select( c("LOGRECNO","GEOID")) %>% 
+#   #convert GEOID to 12-digit FIPS
+#   mutate(GEOID = substr(GEOID,8,20))
+  
+```
+
+##### Clean and subset ACS data
+
+```{r}
+# Subset data
+acs_data <- acs_data %>% 
+  select("LOGRECNO","B17010_001","B17010_002") 
+
+# Unite data and geo info
+acs <- left_join(acs_data, acs_geo, by="LOGRECNO")
+```
+
+#### Compute Poverty
+
+```{r}
+acs <- acs %>% 
+  mutate(poverty = B17010_002/B17010_001) %>% 
+  select(GEOID, poverty)
+```
+
+### Combined data
+
+```{r}
+#append ACS variables to MARS data
+#for current address
+data <- left_join(mars, acs, by=c("current_address" = "GEOID")) %>% 
+  rename(poverty_current = poverty)
+
+# for past address
+data <- left_join(data, acs, by=c("previous_address" = "GEOID")) %>% 
+  rename(poverty_previous = poverty)
+
+# reduce data to target variables
+data <- data %>% 
+  select(all_of(variables)) %>% 
+  mutate(weight = as.numeric(weight))
+```
+
+### Impute NAs
+```{r}
+#impute NAs
+library(mice)
+# make various samples
+data_imputed_NAs <- mice(data,
+                m=15,
+                seed=12345)
+```
+
+
+## Analysis
+
+Without imputed NAs, model cannot run
+```{r, eval=FALSE}
+model <- lm(poverty_current ~ move_reason +
+              race +
+              age +
+              education_less_than_highschool +
+              education_highschool +
+              housing_assistance +
+              single_mom +
+              criminal_record +
+              recent_child +
+              relationship_dissolution +
+              job_loss +
+              benefits_loss +
+              poverty_previous, 
+            data = data)
+```
+Run simple model without controls.
+```{r}
+model <- lm(poverty_current ~ move_reason, 
+            data = data,
+            weights=weight)
+summary(model)
+```
+
+Run final model with imputed values
+```{r}
+models <- with(data_imputed_NAs, 
+               lm(poverty_current ~ move_reason +
+                    race +
+                    age +
+                    education_less_than_highschool +
+                    education_highschool +
+                    housing_assistance +
+                    single_mom +
+                    criminal_record +
+                    recent_child +
+                    relationship_dissolution +
+                    job_loss +
+                    benefits_loss +
+                    poverty_previous, 
+                  weights=weight))
+
+result <- pool(models)
+summary(result)
+```
+
+
+
+
+
+

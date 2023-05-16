@@ -863,6 +863,12 @@ mars <- left_join(mars, recent_benefits_loss) %>%
     TRUE, FALSE))
 ```
 
+```{r}
+# export cleaned file
+write_csv(mars, "data/cleaned_mars.csv")
+```
+
+
 ### American Community Survey (ACS)
 
 #### ACS 5-year Wisconsin block groups by seq table
@@ -887,30 +893,35 @@ acs_geo <- read.csv("./data/g20105wi.csv", header = F) %>%
   #convert GEOID to 12-digit FIPS
   mutate(GEOID = substr(GEOID,8,20))
 
-# bla <- read_excel("./data/WI.xls") #%>% 
-#   select( c("LOGRECNO","GEOID")) %>% 
-#   #convert GEOID to 12-digit FIPS
-#   mutate(GEOID = substr(GEOID,8,20))
-  
 ```
 
-##### Clean and subset ACS data
+##### Clean and subset ACS data & Compute poverty variable
 
 ```{r}
-# Subset data
 acs_data <- acs_data %>% 
-  select("LOGRECNO","B17010_001","B17010_002") 
-
-# Unite data and geo info
-acs <- left_join(acs_data, acs_geo, by="LOGRECNO")
+  mutate(across(starts_with("B1"), as.numeric)) %>% 
+  pivot_longer(starts_with("B1"), names_to = "name", values_to = "value") %>% 
+  separate_wider_delim(name, delim = "_", names = c("year", "measure")) %>% 
+  filter(str_detect(measure, "001|002"), !str_detect(year, "[A-Z]+$")) %>% 
+  mutate(measure = ifelse(measure == "001", "overall_population", 
+                          "population_in_poverty")) %>% 
+  pivot_wider(names_from = measure, values_from = value) %>% 
+  mutate(poverty = population_in_poverty/overall_population, 
+         year = str_extract(year, "\\d{2}$")) %>% 
+  select(LOGRECNO, year, poverty) %>% 
+  pivot_wider(names_from = year, values_from = poverty, 
+              names_prefix = "poverty"
+              )
 ```
 
-#### Compute Poverty
+```{r}
+# Unite data and geo info to long format data
+acs <- left_join(acs_data, acs_geo, by="LOGRECNO") 
+```
 
 ```{r}
-acs <- acs %>% 
-  mutate(poverty = B17010_002/B17010_001) %>% 
-  select(GEOID, poverty)
+# export cleaned file
+write_csv(acs, "data/cleaned_acs.csv")
 ```
 
 ### Combined data
@@ -918,17 +929,47 @@ acs <- acs %>%
 ```{r}
 #append ACS variables to MARS data
 #for current address
-data <- left_join(mars, acs, by=c("current_address" = "GEOID")) %>% 
-  rename(poverty_current = poverty)
+data <- left_join(mars, acs, by=c("current_address" = "GEOID"), suffix = c("", "current")) %>% 
+  rename_with(~ paste0(.x, "_current"), starts_with("poverty"))
 
 # for past address
 data <- left_join(data, acs, by=c("previous_address" = "GEOID")) %>% 
-  rename(poverty_previous = poverty)
+   rename_with(~ paste0(.x, "_previous"), starts_with("poverty") & 
+                 !ends_with("current"))
+
+# compute mean values
+data <- data %>% 
+  rowwise() %>%
+  mutate(poverty_current = mean(c_across(starts_with("poverty") & 
+                                 ends_with("current")), 
+                      na.rm = TRUE),
+         poverty_previous = mean(c_across(starts_with("poverty") & 
+                                 ends_with("previous")), 
+                      na.rm = TRUE)) 
+
+# # check whether different years make a difference
+# plot_data <- data %>% 
+#   pivot_longer(starts_with("poverty"), 
+#                names_to = "year_time", 
+#                values_to = "poverty") %>% 
+#   separate_wider_delim(year_time, delim = "_", names = c("year", "time")) %>% 
+#   mutate(year = str_extract(year, "\\d{2}$")) #%>% 
+#   pivot_wider(names_from = time, values_from = value)
+# 
+# ggplot(plot_data, aes(x = poverty, fill = as.factor(year))) + 
+#   geom_density(alpha = 0.5) + 
+#   facet_wrap(~time) # appear to only be values for 2010 available
+
 
 # reduce data to target variables
 data <- data %>% 
-  select(all_of(variables)) %>% 
+  select(c(all_of(variables), id_case)) %>% 
   mutate(weight = as.numeric(weight))
+```
+
+```{r}
+# export cleaned file
+write_csv(data, "data/cleaned_data_combined.csv")
 ```
 
 ### Impute NAs

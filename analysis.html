@@ -1287,6 +1287,8 @@ mars &lt;- left_join(mars, recent_benefits_loss) %&gt;%
       date_last_move - benefits_loss_date_most_recent &gt;= 0,
     TRUE, FALSE))</code></pre>
 <pre><code>## Joining with `by = join_by(id_case)`</code></pre>
+<pre class="r"><code># export cleaned file
+write_csv(mars, &quot;data/cleaned_mars.csv&quot;)</code></pre>
 </div>
 </div>
 </div>
@@ -1307,44 +1309,78 @@ colnames(acs_data) &lt;- labels %&gt;% colnames()</code></pre>
          ) %&gt;%
   select(c(&quot;LOGRECNO&quot;,&quot;GEOID&quot;)) %&gt;% 
   #convert GEOID to 12-digit FIPS
-  mutate(GEOID = substr(GEOID,8,20))
-
-# bla &lt;- read_excel(&quot;./data/WI.xls&quot;) #%&gt;% 
-#   select( c(&quot;LOGRECNO&quot;,&quot;GEOID&quot;)) %&gt;% 
-#   #convert GEOID to 12-digit FIPS
-#   mutate(GEOID = substr(GEOID,8,20))</code></pre>
-<div id="clean-and-subset-acs-data" class="section level5">
-<h5>Clean and subset ACS data</h5>
-<pre class="r"><code># Subset data
-acs_data &lt;- acs_data %&gt;% 
-  select(&quot;LOGRECNO&quot;,&quot;B17010_001&quot;,&quot;B17010_002&quot;) 
-
-# Unite data and geo info
-acs &lt;- left_join(acs_data, acs_geo, by=&quot;LOGRECNO&quot;)</code></pre>
+  mutate(GEOID = substr(GEOID,8,20))</code></pre>
+<div id="clean-and-subset-acs-data-compute-poverty-variable" class="section level5">
+<h5>Clean and subset ACS data &amp; Compute poverty variable</h5>
+<pre class="r"><code>acs_data &lt;- acs_data %&gt;% 
+  mutate(across(starts_with(&quot;B1&quot;), as.numeric)) %&gt;% 
+  pivot_longer(starts_with(&quot;B1&quot;), names_to = &quot;name&quot;, values_to = &quot;value&quot;) %&gt;% 
+  separate_wider_delim(name, delim = &quot;_&quot;, names = c(&quot;year&quot;, &quot;measure&quot;)) %&gt;% 
+  filter(str_detect(measure, &quot;001|002&quot;), !str_detect(year, &quot;[A-Z]+$&quot;)) %&gt;% 
+  mutate(measure = ifelse(measure == &quot;001&quot;, &quot;overall_population&quot;, 
+                          &quot;population_in_poverty&quot;)) %&gt;% 
+  pivot_wider(names_from = measure, values_from = value) %&gt;% 
+  mutate(poverty = population_in_poverty/overall_population, 
+         year = str_extract(year, &quot;\\d{2}$&quot;)) %&gt;% 
+  select(LOGRECNO, year, poverty) %&gt;% 
+  pivot_wider(names_from = year, values_from = poverty, 
+              names_prefix = &quot;poverty&quot;
+              )</code></pre>
+<pre><code>## Warning: There were 3 warnings in `mutate()`.
+## The first warning was:
+## ℹ In argument: `across(starts_with(&quot;B1&quot;), as.numeric)`.
+## Caused by warning:
+## ! NAs introduced by coercion
+## ℹ Run `dplyr::last_dplyr_warnings()` to see the 2 remaining warnings.</code></pre>
+<pre class="r"><code># Unite data and geo info to long format data
+acs &lt;- left_join(acs_data, acs_geo, by=&quot;LOGRECNO&quot;) </code></pre>
+<pre class="r"><code># export cleaned file
+write_csv(acs, &quot;data/cleaned_acs.csv&quot;)</code></pre>
 </div>
-</div>
-<div id="compute-poverty" class="section level4">
-<h4>Compute Poverty</h4>
-<pre class="r"><code>acs &lt;- acs %&gt;% 
-  mutate(poverty = B17010_002/B17010_001) %&gt;% 
-  select(GEOID, poverty)</code></pre>
 </div>
 </div>
 <div id="combined-data" class="section level3">
 <h3>Combined data</h3>
 <pre class="r"><code>#append ACS variables to MARS data
 #for current address
-data &lt;- left_join(mars, acs, by=c(&quot;current_address&quot; = &quot;GEOID&quot;)) %&gt;% 
-  rename(poverty_current = poverty)
+data &lt;- left_join(mars, acs, by=c(&quot;current_address&quot; = &quot;GEOID&quot;), suffix = c(&quot;&quot;, &quot;current&quot;)) %&gt;% 
+  rename_with(~ paste0(.x, &quot;_current&quot;), starts_with(&quot;poverty&quot;))
 
 # for past address
 data &lt;- left_join(data, acs, by=c(&quot;previous_address&quot; = &quot;GEOID&quot;)) %&gt;% 
-  rename(poverty_previous = poverty)
+   rename_with(~ paste0(.x, &quot;_previous&quot;), starts_with(&quot;poverty&quot;) &amp; 
+                 !ends_with(&quot;current&quot;))
+
+# compute mean values
+data &lt;- data %&gt;% 
+  rowwise() %&gt;%
+  mutate(poverty_current = mean(c_across(starts_with(&quot;poverty&quot;) &amp; 
+                                 ends_with(&quot;current&quot;)), 
+                      na.rm = TRUE),
+         poverty_previous = mean(c_across(starts_with(&quot;poverty&quot;) &amp; 
+                                 ends_with(&quot;previous&quot;)), 
+                      na.rm = TRUE)) 
+
+# # check whether different years make a difference
+# plot_data &lt;- data %&gt;% 
+#   pivot_longer(starts_with(&quot;poverty&quot;), 
+#                names_to = &quot;year_time&quot;, 
+#                values_to = &quot;poverty&quot;) %&gt;% 
+#   separate_wider_delim(year_time, delim = &quot;_&quot;, names = c(&quot;year&quot;, &quot;time&quot;)) %&gt;% 
+#   mutate(year = str_extract(year, &quot;\\d{2}$&quot;)) #%&gt;% 
+#   pivot_wider(names_from = time, values_from = value)
+# 
+# ggplot(plot_data, aes(x = poverty, fill = as.factor(year))) + 
+#   geom_density(alpha = 0.5) + 
+#   facet_wrap(~time) # appear to only be values for 2010 available
+
 
 # reduce data to target variables
 data &lt;- data %&gt;% 
-  select(all_of(variables)) %&gt;% 
+  select(c(all_of(variables), id_case)) %&gt;% 
   mutate(weight = as.numeric(weight))</code></pre>
+<pre class="r"><code># export cleaned file
+write_csv(data, &quot;data/cleaned_data_combined.csv&quot;)</code></pre>
 </div>
 <div id="impute-nas" class="section level3">
 <h3>Impute NAs</h3>
@@ -1431,7 +1467,7 @@ data_imputed_NAs &lt;- mice(data,
 ##   5   13  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
 ##   5   14  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
 ##   5   15  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous</code></pre>
-<pre><code>## Warning: Number of logged events: 75</code></pre>
+<pre><code>## Warning: Number of logged events: 76</code></pre>
 </div>
 </div>
 <div id="analysis" class="section level2">

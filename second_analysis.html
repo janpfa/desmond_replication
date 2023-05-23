@@ -11,9 +11,9 @@
 
 <meta name="author" content="Jan Pfänder" />
 
-<meta name="date" content="2023-05-08" />
+<meta name="date" content="2023-05-23" />
 
-<title>Replication Desmond 2015</title>
+<title>Second Analysis: Replication Desmond 2015</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -350,9 +350,10 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">Replication Desmond 2015</h1>
+<h1 class="title toc-ignore">Second Analysis: Replication Desmond
+2015</h1>
 <h4 class="author">Jan Pfänder</h4>
-<h4 class="date">2023-05-08</h4>
+<h4 class="date">2023-05-23</h4>
 
 </div>
 
@@ -361,1157 +362,119 @@ display: none;
 library(&quot;tidyverse&quot;)
 library(&quot;readxl&quot;) 
 library(&quot;mice&quot;)</code></pre>
-<p>This is a script to replicate a finding in Desmond 2015.</p>
+<p>The instructions for the second analysis are:</p>
 <blockquote>
-<p><em>“Claim: … renters who experienced a forced move relocate to
-poorer … neighborhoods than those who move under less-demanding
-circumstances. (p. 751)”</em></p>
+<p><em>“Your analysis should produce a single, main result in terms of
+statistical families of z-, t-, F-, or χ² tests (or their alternative or
+non-parametric versions). You should control for Black Renter, Hispanic
+Renter, Other Ethnicity Renter Age, Less Than High School Education,High
+School/GED, Housing Assistance in Past Residence Single-Mother Household
+in Past Residence Criminal Record Before Move ,Had a Child in Previous 2
+Years”</em></p>
 </blockquote>
-<div id="data" class="section level2">
-<h2>Data</h2>
-<p>I rely on two main data sets</p>
+<p>Following these instructions, I will proceed as for the first
+analysis, but this time <em>leaving out</em> the following control
+variables:</p>
 <ul>
-<li><code>mars</code>: The MARS survey, mainly used to compute the
-independent variable (<code>forced_move</code>) and controls. This is a
-merged data set from several files, all downloaded from <a href="https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/BLUU3U">Harvard
-Dataverse</a>.</li>
-<li><code>acs</code>: American Community Survey (ACS), used to compute
-the outcome variable (<code>poverty</code>). 2010 ACS 5-year estimates
-of the percentage of families in poverty in a certain neighborhood (by
-Census Block Group in Wisconsin). Data is downloaded from ACS legacy
-data file download site <a href="https://www2.census.gov/acs2010_5yr/summaryfile/2006-2010_ACSSF_By_State_By_Sequence_Table_Subset/Wisconsin/Tracts_Block_Groups_Only/20105wi0047000.zip">at
-this link</a>. Geographic identifiers are downloaded from <a href="https://www2.census.gov/acs2010_5yr/summaryfile/2006-2010_ACSSF_By_State_By_Sequence_Table_Subset/Wisconsin/Tracts_Block_Groups_Only/g20105wi.csv">here</a>.</li>
+<li>relationship_dissolution</li>
+<li>job_loss</li>
+<li>benefits_loss</li>
+<li>poverty_previous</li>
 </ul>
-</div>
-<div id="variables" class="section level2">
-<h2>Variables</h2>
-<p>The variables we need to replicate the analysis are:</p>
-<ul>
-<li><code>poverty_current</code>: Neighborhood poverty rate</li>
-<li><code>move_reason</code>: Reason for moving (forced, responsive,
-voluntary)</li>
-<li><code>race</code>: Race (black, hispanic, other)</li>
-<li><code>age</code></li>
-<li><code>education_less_than_highschool</code> : Education (Less Than
-High School Education)</li>
-<li><code>education_highschool</code> : Education (High School/GED)</li>
-<li><code>housing_asstiance</code>: Housing Assistance in Past
-Residence</li>
-<li><code>single_mom</code> : Single-Mother Household in Past
-Residence</li>
-<li><code>criminal_record</code>: Criminal Record Before Move</li>
-<li><code>recent_child</code>: Had a Child in Previous 2 Years</li>
-<li><code>relationship_dissolution</code> : Relationship Dissolution
-Before Move in Previous 2 Years</li>
-<li><code>job_loss</code>: Job Loss Before Move in Previous 2 Years</li>
-<li><code>benefits_loss</code>: Public Benefits Sanction Before Move in
-Previous 2 Years</li>
-<li><code>poverty_previous</code>: Lagged Dependent Variable</li>
-</ul>
-<div id="mars" class="section level3">
-<h3>MARS</h3>
-<pre class="r"><code># read data
-mars &lt;- read.csv(&quot;data/MARS_data.csv&quot;)</code></pre>
-<p>About the data structure the “User’s guide” of Mars provides
-explanations:</p>
-<blockquote>
-<p><em>“Accordingly, the data structure entails previous addresses or
-“spells” clustered within respondents. The variable csid is the unique
-case identifier, and the variable hhindex_new indicates which “spell” or
-previous address to which data refer. All cross-sectional data are
-housed in rows where hhindex_new = 0, referring to a respondent’s
-address at the time of the survey (her or his “current address”). All
-retrospective data are housed in rows where hhindex_new = 1, 2, … n,
-where n refers to the number of addresses at which a respondent has
-lived in the previous two years. An hhindex_new value of 1 refers to a
-respondent’s last address; an hhindex_new value of 2 refers to the
-address the respondent lived in prior to the former address, and so on.
-Here, then, a “spell” corresponds to addresses, not time
-points.”</em></p>
-</blockquote>
-<p>I will first select and re-name key variables from the data frame.
-When not already available in the data set, I then construct target
-variables one by one.</p>
-<div id="select-and-rename-variables" class="section level4">
-<h4>Select and rename variables</h4>
-<p>I start by renaming and selecting variables that we need to compute
-our target variables.</p>
-<pre class="r"><code># Rename and select variables necessary to compute analysis variables
-mars &lt;- mars %&gt;% rename(
-  # Identification and other helper variables
-  ###
-  # Date of last move
-  date_last_move_month = A2_m,
-  date_last_move_year = A2_y,
-  # ID
-  id_case = csid,
-  id_housing = hhindex_new, 
-  # Recent move (to filter the relevant subset of the data)
-  recent = recentmove,
-  # Current Address Block Group (FIPS)
-  current_address = addr1_bg, 
-  # Previous Residence: Block Group (FIPS)
-  previous_address = past_addr_bg,
-  # Survey weights
-  weight = weight,
-  # reason for moving (forced, responsive, voluntary), 
-  ###
-  # Were you, or a person you were staying with, evicted? (1)
-  forced_1 = H1a,
-  # Did you, or a person you were staying with, receive an eviction notice while living at this place? (2)
-  forced_2 = H5a,
-  # Did you, or a person you were staying with, receive an eviction notice while living at this place? (3)
-  forced_3 = H14a,
-  # Did you move away from this place because you, or a person you were stay with, missed a rent payment and thought that if you didn’t move you would be evicted? (4)
-  forced_4 = H16a, 
-  # Did you move away from this place because the city condemned the building? (5)
-  forced_5 = H18a,
-  # Did you move away because the landlord went into foreclosure? (6d)
-  forced_6 = H19a_d, 
-  # Did you move away because the landlord raised the rent? (6a)
-  responsive_1 = H19a_a, 
-  # Did you move away because the neighborhood was too dangerous? (6b)
-  responsive_2 = H19a_b, 
-  # Did you move away because the landlord wouldn&#39;t fix anything? (6c)
-  responsive_3 = H19a_c, 
-  # race 
-  ###
-  # What is your race? (several variables, in case of several answers)
-  race_1 = J16_a,
-  race_2 = J16_b,
-  race_3 = J16_c,
-  race_4 = J16_d,
-  race_5 = J16_e,
-  # Are you Hispanic?
-  race_6 = J15,
-  # age 
-  ###
-  # How old are you?
-  age = J20,
-  # education
-  ###
-  # What is the highest level of schooling you have completed?
-  education = J12,
-  # housing_assistance
-  ###
-  # Did the federal, state, or local government help to pay your rent?
-  housing_assistance = F9a,
-  # single_mom 
-  ### 
-  # R&#39;S GENDER
-  single_mom_gender = J41,
-  # When you lived at this place, did any adults over the age of 18 live with you?
-  single_mom_alone = G2a, 
-  # Number of children &lt; 18 in HH (sum of E8* and E16)
-  single_mom_kids = numkidsHH,
-  # criminal_record 
-  ###
-  # Do you have a criminal record?
-  criminal_record = J38,
-  # Convicted of crime: Month
-  criminal_record_month = J39_a,
-  # Convicted of crime: Year
-  criminal_record_year = J39_b
-) %&gt;% 
-  rename_with(
-    # recent_child
-    ###
-    # Child A-K:  How old is [fill heshe]? (rename all variables from a to k)
-    # YEARS
-    ~ str_replace(.x, &quot;E6&quot;, &quot;recent_child_year&quot;), starts_with(&quot;E6&quot;) &amp; ends_with(&quot;_a&quot;)) %&gt;% 
-  rename_with(
-    # MONTHS IF LESS THAN 1 YEAR
-    ~ str_replace(.x, &quot;E6&quot;, &quot;recent_child_months&quot;), starts_with(&quot;E6&quot;) &amp; ends_with(&quot;_b&quot;)) %&gt;% 
-  rename_with(
-    # relationship_dissolution
-    ###
-    # In what month and year did the most recent serious relationship end?
-    # month
-    ~ str_replace(.x, &quot;J25&quot;, &quot;relationship_dissolution_month&quot;), starts_with(&quot;J25&quot;) &amp; ends_with(&quot;_a&quot;)) %&gt;% 
-  rename_with(
-    # year
-    ~ str_replace(.x, &quot;J25&quot;, &quot;relationship_dissolution_year&quot;), starts_with(&quot;J25&quot;) &amp; ends_with(&quot;_b&quot;)) %&gt;% 
-  rename_with(
-    # job_loss
-    ###
-    # In what month and year were you most recently laid off or fired from a job?
-    # month
-    ~ str_replace(.x, &quot;J28&quot;, &quot;job_loss_month&quot;), starts_with(&quot;J28&quot;) &amp; ends_with(&quot;_a&quot;)) %&gt;% 
-  rename_with(
-    # year
-    ~ str_replace(.x, &quot;J28&quot;, &quot;job_loss_year&quot;), starts_with(&quot;J28&quot;) &amp; ends_with(&quot;_b&quot;)) %&gt;% 
-  rename_with(
-    # benefits_loss
-    ###
-    # In what month and year were your public assistance benefits most recently stopped or sanctioned?
-    # month
-    ~ str_replace(.x, &quot;J32&quot;, &quot;benefits_loss_month&quot;), starts_with(&quot;J32&quot;) &amp; ends_with(&quot;_a&quot;)) %&gt;% 
-  rename_with(
-    # year
-    ~ str_replace(.x, &quot;J32&quot;, &quot;benefits_loss_year&quot;), starts_with(&quot;J32&quot;) &amp; ends_with(&quot;_b&quot;)) %&gt;% 
-  # retain only variables of interest
-  select(contains(&quot;forced&quot;), contains(&quot;responsive&quot;), contains(&quot;race&quot;), contains(&quot;address&quot;), contains(&quot;weight&quot;),
-                                  contains(&quot;age&quot;), contains(&quot;education&quot;), contains(&quot;housing_assistance&quot;), 
-                                  contains(&quot;single_mom&quot;), contains(&quot;criminal_record&quot;), contains(&quot;recent_child&quot;), 
-                                  contains(&quot;relationship_dissolution&quot;), contains(&quot;job_loss&quot;), 
-                                  contains(&quot;benefits_loss&quot;), contains(&quot;date_last_move&quot;), contains(&quot;id_case&quot;), 
-                                  contains(&quot;id_housing&quot;), contains(&quot;recent&quot;))</code></pre>
-<pre class="r"><code># Make strings more compatible
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(everything(), tolower)
-         )</code></pre>
-</div>
-<div id="re-shape-and-subset-the-data" class="section level4">
-<h4>Re-shape and subset the data</h4>
-<p>I want to filter out the individuals that moved within two years
-before the survey.</p>
-<pre class="r"><code># For now, several rows per id_case (because several houses), but only one 
-# row (the first) per id_case contains the value of recent. 
-# Make sure all rows per id_case contain the value of recent.
-mars &lt;- mars %&gt;% 
-  group_by(id_case) %&gt;% 
-  # fill in all rows within id_case with the first row value
-  fill(recent, .direction = &quot;down&quot;) %&gt;% 
-  # remove grouping
-  ungroup %&gt;% 
-  filter(recent == 1)</code></pre>
-<p>The addresses are marked by <code>id_housing</code>. The current
-address has the value <code>0</code>, the previous one has the value
-<code>1</code>. The row of the current address contains the values for
-most variables of interest. The row of the previous address contains
-information about the reason of the move.</p>
-<p>I suppose there has only been one move within the period of interest,
-so I consider only the last previous address.</p>
-<p>I re-shape the data so that there is only one row per
-<code>id_case</code>.</p>
-<pre class="r"><code># extract info for current address
-current_adress &lt;- mars %&gt;% filter(id_housing == 0) %&gt;% 
-  # everything BUT moving reasons
-  select(-c(
-    starts_with(c(&quot;forced&quot;, &quot;responsive&quot;)), 
-    housing_assistance, 
-    single_mom_alone, previous_address
-  )
-  )
-
-# extract info for previous address
-previous_adress &lt;- mars %&gt;% filter(id_housing == 1) %&gt;% 
-  # moving reasons
-  select(id_case, starts_with(c(&quot;forced&quot;, &quot;responsive&quot;)), 
-         housing_assistance, single_mom_alone, 
-         previous_address)
-
-# re-unite data
-mars &lt;- left_join(current_adress, previous_adress, by = &quot;id_case&quot;)</code></pre>
-</div>
-<div id="build-target-variables" class="section level4">
-<h4>Build target variables</h4>
-<div id="moving-reason-forced-and-responsive-move" class="section level5">
-<h5>Moving reason: forced and responsive move</h5>
-<p>First, we clean all variables.</p>
-<pre class="r"><code># check levels
-mars %&gt;% select(starts_with(c(&quot;forced&quot;, &quot;responsive&quot;))) %&gt;% 
-  pivot_longer(everything()) %&gt;% 
-  group_by(name, value) %&gt;% 
-  count()</code></pre>
-<pre><code>## # A tibble: 55 × 3
-## # Groups:   name, value [55]
-##    name     value     n
-##    &lt;chr&gt;    &lt;chr&gt; &lt;int&gt;
-##  1 forced_1 &quot;&quot;       30
-##  2 forced_1 &quot;-2&quot;      2
-##  3 forced_1 &quot;-4&quot;     10
-##  4 forced_1 &quot;no&quot;    497
-##  5 forced_1 &quot;yes&quot;    40
-##  6 forced_1  &lt;NA&gt;     1
-##  7 forced_2 &quot;&quot;       66
-##  8 forced_2 &quot;-2&quot;      7
-##  9 forced_2 &quot;-4&quot;     14
-## 10 forced_2 &quot;no&quot;    458
-## # ℹ 45 more rows</code></pre>
-<pre class="r"><code># mini cleaning function
-clean &lt;- function (.x) case_when(.x == &quot;yes&quot;~ 1, 
-                      .x == &quot;no&quot; ~ 0, 
-                      TRUE ~ NA)
-
-# check cleaning method
-mars %&gt;% 
-  mutate(
-    across(starts_with(c(&quot;forced&quot;, &quot;responsive&quot;)), 
-           # apply cleaning function
-           clean, 
-           .names = &quot;{col}_cleaned&quot;
-    )
-  ) %&gt;% 
-  select(starts_with(&quot;forced_1&quot;))</code></pre>
-<pre><code>## # A tibble: 580 × 2
-##    forced_1 forced_1_cleaned
-##    &lt;chr&gt;               &lt;dbl&gt;
-##  1 no                      0
-##  2 no                      0
-##  3 no                      0
-##  4 no                      0
-##  5 no                      0
-##  6 no                      0
-##  7 no                      0
-##  8 no                      0
-##  9 no                      0
-## 10 yes                     1
-## # ℹ 570 more rows</code></pre>
-<pre class="r"><code># apply cleaning
-mars &lt;- mars %&gt;% 
-  mutate(
-    across(starts_with(c(&quot;forced&quot;, &quot;responsive&quot;)), 
-           # apply cleaning function
-           clean
-    )
-  )</code></pre>
-<p>We have several<code>forced_...</code> and
-<code>responsive_...</code> variables. For each of these two groups, we
-want a summary variable that indicates <code>TRUE</code> if any of the
-variables within the group yield <code>TRUE</code>.</p>
-<pre class="r"><code># Create target variables
-mars &lt;- mars %&gt;%
-  rowwise() %&gt;%
-  # Whenever there is at least one &quot;yes&quot; (= 1) response, code as 1,
-  # otherwise code 0
-  mutate(forced = sum(c_across(starts_with(&quot;forced&quot;)), na.rm = TRUE),
-         forced = ifelse(forced &gt; 0, TRUE, FALSE),
-         responsive = sum(c_across(starts_with(&quot;responsive&quot;)), na.rm = TRUE),
-         responsive = ifelse(responsive &gt; 0, TRUE, FALSE)
-  ) %&gt;%
-  ungroup() %&gt;% 
-  mutate(
-    # so far, overlap is possible between forced and responsive. 
-    # I will now prioritize forced
-    move_reason = case_when(forced == TRUE ~ &quot;forced&quot;, 
-                            responsive == TRUE ~ &quot;responsive&quot;, 
-                            TRUE ~ &quot;voluntary/NA&quot;),
-    # set different baseline level
-    move_reason = relevel(as.factor(move_reason), ref = &quot;voluntary/NA&quot;))</code></pre>
-</div>
-<div id="race" class="section level5">
-<h5>Race</h5>
-<p>Clean and Re-code NA’s</p>
-<pre class="r"><code># check levels
-mars %&gt;% select(starts_with(&quot;race&quot;)) %&gt;% 
-  pivot_longer(everything()) %&gt;% 
-  group_by(name, value) %&gt;% 
-  count()</code></pre>
-<pre><code>## # A tibble: 30 × 3
-## # Groups:   name, value [30]
-##    name   value                                           n
-##    &lt;chr&gt;  &lt;chr&gt;                                       &lt;int&gt;
-##  1 race_1 &quot;american indian or alaska native&quot;              9
-##  2 race_1 &quot;asian&quot;                                         5
-##  3 race_1 &quot;black or african american&quot;                   285
-##  4 race_1 &quot;blank&quot;                                         3
-##  5 race_1 &quot;don&#39;t know&quot;                                    2
-##  6 race_1 &quot;native hawaiian or other pacific islander&quot;     1
-##  7 race_1 &quot;refused&quot;                                       2
-##  8 race_1 &quot;something else (specify)&quot;                     74
-##  9 race_1 &quot;white&quot;                                       199
-## 10 race_2 &quot;&quot;                                            283
-## # ℹ 20 more rows</code></pre>
-<pre class="r"><code>levels(as.factor(mars$race_6))</code></pre>
-<pre><code>## [1] &quot;blank&quot;      &quot;don&#39;t know&quot; &quot;no&quot;         &quot;refused&quot;    &quot;yes&quot;</code></pre>
-<pre class="r"><code># define NA values
-NA_responses &lt;- c(&quot;blank&quot;, &quot;don&#39;t know&quot;, &quot;refused&quot;, &quot;-3&quot;, &quot;&quot;)
-# mini function to assign NA&#39;s to values defined above
-recodeNAs &lt;- function(x) (ifelse (x %in% NA_responses, NA, x))
-
-# recode NAs
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(starts_with(&quot;race&quot;), recodeNAs)
-         )</code></pre>
-<p>Respondents could indicate several races. In the analysis, 3 groups
-were compared: Black, Hispanic and Other.</p>
-<p>I assume that an individual can appear in both the Hispanic and the
-Black Group. For the outcome variable race, I will prioritize black,
-then hispanic over other.</p>
-<pre class="r"><code>mars &lt;- mars %&gt;% 
-  mutate(
-    race_black = ifelse(
-    # if all NAs
-    if_all(starts_with(&quot;race&quot;), is.na),
-    # code NA
-    NA,
-    # else code 1 if black and 0 if otherwise
-    if_any(starts_with(&quot;race&quot;) &amp; !ends_with(&quot;6&quot;),
-           ~str_detect(., &quot;black&quot;)
-           )
-    ),
-    race_hispanic = ifelse(if_all(starts_with(&quot;race&quot;), is.na),
-                             NA,
-                           ifelse(race_6 == &quot;yes&quot;, TRUE, FALSE)
-                           ), 
-    race_other = ifelse(if_all(starts_with(&quot;race&quot;), is.na),
-                             NA,
-                        (ifelse(
-                          (race_black == FALSE | is.na(race_black)) &amp; 
-                            (race_hispanic == FALSE | is.na(race_hispanic)), 
-                          TRUE, FALSE)
-                         )
-                        )
-  ) %&gt;% 
-  mutate(
-    # so far, overlap is possible between forced and responsive. 
-    # I will now prioritize forced
-    race = case_when(race_black == TRUE ~ &quot;black&quot;, 
-                     race_hispanic == TRUE ~ &quot;hispanic&quot;, 
-                     race_other == TRUE ~ &quot;other&quot;,
-                     TRUE ~ NA),
-    # set different baseline level
-    race= relevel(as.factor(race), ref = &quot;other&quot;))
-
-# # check    
-# mars %&gt;% filter((race_black == FALSE | is.na(race_black)) &amp; (race_hispanic == FALSE | is.na(race_hispanic))) </code></pre>
-</div>
-<div id="age" class="section level5">
-<h5>Age</h5>
-<pre class="r"><code># check levels
-table(mars$age, useNA = &quot;always&quot;)</code></pre>
-<pre><code>## 
-##              18      19      20      21      22      23      24      25      26 
-##     277       7       6       7       9      14      14      12       5      14 
-##      27      28      29      30      31      32      33      34      35      36 
-##      17      19      10      10       6      13      10       9       3       6 
-##      37      38      39      40      41      42      43      44      45      46 
-##       4      10       7       8       1       9       5       5       7       2 
-##      47      48      49      50      51      52      53      54      55      56 
-##       7       1       6       3       3       4       4       6       1       1 
-##      57      58      59      61      62      63      67      68      77      91 
-##       3       2       3       1       1       1       1       2       2       1 
-## refused    &lt;NA&gt; 
-##       1       0</code></pre>
-<pre class="r"><code>levels(as.factor(mars$age))</code></pre>
-<pre><code>##  [1] &quot;&quot;        &quot;18&quot;      &quot;19&quot;      &quot;20&quot;      &quot;21&quot;      &quot;22&quot;      &quot;23&quot;     
-##  [8] &quot;24&quot;      &quot;25&quot;      &quot;26&quot;      &quot;27&quot;      &quot;28&quot;      &quot;29&quot;      &quot;30&quot;     
-## [15] &quot;31&quot;      &quot;32&quot;      &quot;33&quot;      &quot;34&quot;      &quot;35&quot;      &quot;36&quot;      &quot;37&quot;     
-## [22] &quot;38&quot;      &quot;39&quot;      &quot;40&quot;      &quot;41&quot;      &quot;42&quot;      &quot;43&quot;      &quot;44&quot;     
-## [29] &quot;45&quot;      &quot;46&quot;      &quot;47&quot;      &quot;48&quot;      &quot;49&quot;      &quot;50&quot;      &quot;51&quot;     
-## [36] &quot;52&quot;      &quot;53&quot;      &quot;54&quot;      &quot;55&quot;      &quot;56&quot;      &quot;57&quot;      &quot;58&quot;     
-## [43] &quot;59&quot;      &quot;61&quot;      &quot;62&quot;      &quot;63&quot;      &quot;67&quot;      &quot;68&quot;      &quot;77&quot;     
-## [50] &quot;91&quot;      &quot;refused&quot;</code></pre>
-<pre class="r"><code># clean
-mars &lt;- mars %&gt;% 
-  # For now, age is character variable. 
-  # This turns all non-numeric values into NAs
-  mutate(age = as.numeric(age)) </code></pre>
-<pre><code>## Warning: There was 1 warning in `mutate()`.
-## ℹ In argument: `age = as.numeric(age)`.
-## Caused by warning:
-## ! NAs introduced by coercion</code></pre>
-</div>
-<div id="education" class="section level5">
-<h5>Education</h5>
-<pre class="r"><code># inspect levels
-table(mars$education, useNA = &quot;always&quot;)</code></pre>
-<pre><code>## 
-##          2-year, community college degree 
-##                                        34 
-##             4-year college degree or more 
-##                                        49 
-##                                         8 
-##                                        39 
-##                                     blank 
-##                                         2 
-##                                don&#39;t know 
-##                                         2 
-## elementary school (1st through 8th grade) 
-##                                        21 
-##                                       ged 
-##                                        36 
-##                       high school diploma 
-##                                       156 
-##                                   refused 
-##                                         3 
-##                   some college, no degree 
-##                                       140 
-## some high school (9th through 11th grade) 
-##                                        98 
-##                                      &lt;NA&gt; 
-##                                         0</code></pre>
-<pre class="r"><code>levels(as.factor(mars$education))</code></pre>
-<pre><code>##  [1] &quot;2-year, community college degree&quot;         
-##  [2] &quot;4-year college degree or more&quot;            
-##  [3] &quot;8&quot;                                        
-##  [4] &quot;blank&quot;                                    
-##  [5] &quot;don&#39;t know&quot;                               
-##  [6] &quot;elementary school (1st through 8th grade)&quot;
-##  [7] &quot;ged&quot;                                      
-##  [8] &quot;high school diploma&quot;                      
-##  [9] &quot;refused&quot;                                  
-## [10] &quot;some college, no degree&quot;                  
-## [11] &quot;some high school (9th through 11th grade)&quot;</code></pre>
-<pre class="r"><code># define NA values
-NA_responses &lt;- c(&quot;blank&quot;, &quot;don&#39;t know&quot;, &quot;8&quot;, &quot;refused&quot;)
-# mini function to assign NA&#39;s to values defined above
-recodeNAs &lt;- function(x) (ifelse (x %in% NA_responses, NA, x))
-
-# recode NAs
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(education, recodeNAs)
-         )</code></pre>
-<p>The analysis distinguishes two categories: Less Than High School
-Education, High School/GED.</p>
-<p>I assume the baseline for - each of the two variables respectively -
-are all other levels.</p>
-<pre class="r"><code>less_than_highschool &lt;- c(&quot;elementary school (1st through 8th grade)&quot;)
-highschool &lt;- c(&quot;high school diploma&quot;, &quot;ged&quot;)
-
-mars &lt;- mars %&gt;% 
-  mutate(education_less_than_highschool = ifelse(education %in% less_than_highschool, 
-                                                 TRUE, FALSE), 
-         education_highschool = ifelse(education %in% highschool, 
-                                                 TRUE, FALSE)
-         ) </code></pre>
-</div>
-<div id="housing-assitance" class="section level5">
-<h5>Housing Assitance</h5>
-<pre class="r"><code># inspect levels
-table(mars$housing_assistance, useNA = &quot;always&quot;)</code></pre>
-<pre><code>## 
-##        -1   -2   -4   no  yes &lt;NA&gt; 
-##   26   12    9   44  460   28    1</code></pre>
-<pre class="r"><code>levels(as.factor(mars$housing_assistance))</code></pre>
-<pre><code>## [1] &quot;&quot;    &quot;-1&quot;  &quot;-2&quot;  &quot;-4&quot;  &quot;no&quot;  &quot;yes&quot;</code></pre>
-<pre class="r"><code># define valid values
-valid_responses &lt;- c(&quot;no&quot;, &quot;yes&quot;)
-# mini function to assign NA&#39;s to values defined above
-recodeNAs &lt;- function(x) (ifelse (!x %in% valid_responses, NA, x))
-
-# recode NAs
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(housing_assistance, recodeNAs), 
-         housing_assistance = case_when(housing_assistance == &quot;yes&quot; ~ TRUE, 
-                                        housing_assistance == &quot;no&quot; ~ FALSE, 
-                                        TRUE ~ NA
-                                        )
-         )</code></pre>
-</div>
-<div id="recent-child" class="section level5">
-<h5>Recent Child</h5>
-<pre class="r"><code># check levels
-levels(as.factor(mars$recent_child_monthsa_b))</code></pre>
-<pre><code>## [1] &quot;&quot;        &quot;1&quot;       &quot;11&quot;      &quot;2&quot;       &quot;5&quot;       &quot;7&quot;       &quot;8&quot;      
-## [8] &quot;blank&quot;   &quot;refused&quot;</code></pre>
-<pre class="r"><code># # for more extensive check
-# mars %&gt;% select(starts_with(&quot;recent_child&quot;)) %&gt;% 
-#   pivot_longer(everything()) %&gt;% 
-#   group_by(name, value) %&gt;% 
-#   count()</code></pre>
-<pre class="r"><code># define NA values
-NA_responses &lt;- c(&quot;&quot;, &quot;refused&quot;, &quot;blank&quot;)
-# mini function to assign NA&#39;s to values defined above
-recodeNAs &lt;- function(x) (ifelse (x %in% NA_responses, NA, x))
-
-# recode NAs
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(starts_with(&quot;recent_child&quot;), recodeNAs), 
-         # transform to numeric
-         across(starts_with(&quot;recent_child&quot;), as.numeric)
-         )</code></pre>
-<pre><code>## Warning: There were 9 warnings in `mutate()`.
-## The first warning was:
-## ℹ In argument: `across(starts_with(&quot;recent_child&quot;), as.numeric)`.
-## Caused by warning:
-## ! NAs introduced by coercion
-## ℹ Run `dplyr::last_dplyr_warnings()` to see the 8 remaining warnings.</code></pre>
-<p>We calculate the exact age of each child.</p>
-<pre class="r"><code># calculate exact age combining month and year
-exact_age &lt;- mars %&gt;% pivot_longer(starts_with(&quot;recent_child&quot;), 
-                      names_to = &quot;child&quot;, 
-                      values_to = &quot;age_child&quot;) %&gt;% 
-  # change the names of the variables slightly
-  mutate(child = gsub(&quot;(year|months)&quot;, &quot;\\1_&quot;, child), 
-         child = sub(&quot;_[^_]*$&quot;, &quot;&quot;, child)) %&gt;%
-  # split at last underscore
-  separate(col = child, into = c(&quot;date&quot;, &quot;pair&quot;), 
-           sep = &quot;_(?!.*_)&quot;, extra = &quot;merge&quot;)  %&gt;% 
-  select(id_case, date, pair, age_child) %&gt;% 
-  pivot_wider(names_from = date, values_from = age_child) %&gt;% 
-  # calculate all in months (multiply years by 12)
-  mutate(recent_child_year = recent_child_year*12) %&gt;% 
-  rowwise() %&gt;% 
-  # calculate exact age
-  mutate(recent_child_age = sum(c_across(starts_with(&quot;recent_child&quot;)), na.rm = TRUE),
-         # recode NAs
-         recent_child_age = ifelse(recent_child_age == 0, NA, recent_child_age)
-         )</code></pre>
-<p>We retain only the age of the youngest child (which determines the
-variable, namely whether there was at least one child within the last
-two years). If that value is smaller than or equal to 24 (months,
-i.e. two years) I code <code>TRUE</code> for the target variable
-<code>recent_child</code>.</p>
-<pre class="r"><code># compute age of youngest child
-recent_child &lt;- exact_age %&gt;%  
-  group_by(id_case) %&gt;% 
-    summarize(youngest_child_age = ifelse(all(is.na(recent_child_age)), 
-                                          NA, 
-                                          min(recent_child_age, na.rm = TRUE))) %&gt;% 
-  # create target variable
-  mutate(recent_child = ifelse(youngest_child_age &lt;= 24, TRUE, FALSE)) %&gt;% 
-  select(id_case, recent_child)
-  
-
-# merge recent_child back into our data frame
-mars &lt;- left_join(mars, recent_child)</code></pre>
-<pre><code>## Joining with `by = join_by(id_case)`</code></pre>
-</div>
-<div id="single-mom" class="section level5">
-<h5>Single mom</h5>
-<p>We have to check several variables:</p>
-<ul>
-<li>Is respondent female?
-(<code>single_mom_gender == &quot;female&quot;</code>)</li>
-<li>only adult in household (<code>single_mom_gender == 0</code>)</li>
-<li>children under 18 (<code>single_mom_kids &gt; 0</code>)</li>
-</ul>
-<pre class="r"><code># inspect levels
-table(mars$single_mom_gender, useNA = &quot;always&quot;)</code></pre>
-<pre><code>## 
-##  blank female   male   &lt;NA&gt; 
-##      1    358    221      0</code></pre>
-<pre class="r"><code># inspect levels
-table(mars$single_mom_alone, useNA = &quot;always&quot;)</code></pre>
-<pre><code>## 
-##         0  yes &lt;NA&gt; 
-##   48  214  317    1</code></pre>
-<pre class="r"><code># inspect levels
-table(mars$single_mom_kids, useNA = &quot;always&quot;)</code></pre>
-<pre><code>## 
-##    0    1   13    2    3    4    5    6    7 &lt;NA&gt; 
-##  280  106    1   81   60   33   11    5    1    2</code></pre>
-<pre class="r"><code># define NA values
-NA_responses &lt;- c(&quot;&quot;, &quot;blank&quot;)
-# mini function to assign NA&#39;s to values defined above
-recodeNAs &lt;- function(x) (ifelse (x %in% NA_responses, NA, x))
-
-# recode NAs
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(starts_with(&quot;single_mom&quot;), recodeNAs), 
-         # transform to numeric
-         single_mom_kids = as.numeric(single_mom_kids)
-         )</code></pre>
-<pre class="r"><code># create single_mom variable
-mars &lt;- mars %&gt;% 
-  mutate(single_mom = ifelse(single_mom_gender == &quot;female&quot; &amp; 
-                               single_mom_alone == 0 &amp;
-                               single_mom_kids &gt; 0, 
-                             TRUE, 
-                             ifelse(if_any(starts_with(&quot;single_mom&quot;), is.na),
-                             NA, FALSE)
-                               )
-         ) </code></pre>
-</div>
-<div id="time-last-move" class="section level5">
-<h5>Time last move</h5>
-<p>Many control variables capture a situation <em>before the last
-move</em>. We make an exact measure in years.</p>
-<pre class="r"><code># inspect
-table(mars$date_last_move_year, useNA = &quot;always&quot;)</code></pre>
-<pre><code>## 
-## 2007 2008 2009 2010 2011 &lt;NA&gt; 
-##   10  104  211  141  114    0</code></pre>
-<pre class="r"><code>table(mars$date_last_move_month, useNA = &quot;always&quot;)</code></pre>
-<pre><code>## 
-##    1   10   11   12    2    3    4    5    6    7    8    9 &lt;NA&gt; 
-##   27   70   56   37   29   35   28   30   77   49   81   61    0</code></pre>
-<pre class="r"><code># make variable of exact point of moving measured in years
-mars &lt;- mars %&gt;% mutate(
-  across(starts_with(&quot;date_last_move&quot;), as.numeric),
-  date_last_move = date_last_move_year + date_last_move_month/12) </code></pre>
-</div>
-<div id="criminal-record" class="section level5">
-<h5>Criminal Record</h5>
-<p>We have to check if there was a criminal record <em>before the last
-move</em>.</p>
-<pre class="r"><code># year
-levels(as.factor(mars$criminal_record_year))</code></pre>
-<pre><code>##  [1] &quot;&quot;        &quot;1960&quot;    &quot;1974&quot;    &quot;1975&quot;    &quot;1976&quot;    &quot;1978&quot;    &quot;1979&quot;   
-##  [8] &quot;1981&quot;    &quot;1983&quot;    &quot;1985&quot;    &quot;1988&quot;    &quot;1989&quot;    &quot;1990&quot;    &quot;1991&quot;   
-## [15] &quot;1992&quot;    &quot;1993&quot;    &quot;1994&quot;    &quot;1995&quot;    &quot;1996&quot;    &quot;1997&quot;    &quot;1998&quot;   
-## [22] &quot;1999&quot;    &quot;2000&quot;    &quot;2001&quot;    &quot;2002&quot;    &quot;2003&quot;    &quot;2004&quot;    &quot;2005&quot;   
-## [29] &quot;2006&quot;    &quot;2007&quot;    &quot;2008&quot;    &quot;2009&quot;    &quot;2010&quot;    &quot;2011&quot;    &quot;blank&quot;  
-## [36] &quot;refused&quot;</code></pre>
-<pre class="r"><code># month
-levels(as.factor(mars$criminal_record_month))</code></pre>
-<pre><code>##  [1] &quot;&quot;           &quot;1&quot;          &quot;10&quot;         &quot;11&quot;         &quot;12&quot;        
-##  [6] &quot;2&quot;          &quot;3&quot;          &quot;4&quot;          &quot;5&quot;          &quot;6&quot;         
-## [11] &quot;7&quot;          &quot;8&quot;          &quot;9&quot;          &quot;blank&quot;      &quot;don&#39;t know&quot;
-## [16] &quot;refused&quot;</code></pre>
-<pre class="r"><code># define NA values
-NA_responses &lt;- c(&quot;blank&quot;, &quot;don&#39;t know&quot;, &quot;refused&quot;, &quot;&quot;)
-# mini function to assign NA&#39;s to values defined above
-recodeNAs &lt;- function(x) (ifelse (x %in% NA_responses, NA, x))
-
-# recode NAs
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(starts_with(&quot;criminal&quot;), recodeNAs)
-         )
-
-mars %&gt;% select(starts_with(&quot;criminal&quot;), starts_with(&quot;interview&quot;)) %&gt;% filter(criminal_record == &quot;yes&quot;)</code></pre>
-<pre><code>## # A tibble: 107 × 3
-##    criminal_record criminal_record_month criminal_record_year
-##    &lt;chr&gt;           &lt;chr&gt;                 &lt;chr&gt;               
-##  1 yes             &lt;NA&gt;                  2002                
-##  2 yes             3                     1992                
-##  3 yes             &lt;NA&gt;                  2004                
-##  4 yes             &lt;NA&gt;                  1997                
-##  5 yes             5                     1994                
-##  6 yes             5                     2006                
-##  7 yes             1                     1974                
-##  8 yes             &lt;NA&gt;                  1985                
-##  9 yes             4                     1996                
-## 10 yes             &lt;NA&gt;                  2002                
-## # ℹ 97 more rows</code></pre>
-<pre class="r"><code># make variable of exact point of moving measured in years
-mars &lt;- mars %&gt;% mutate(
-  across(starts_with(&quot;criminal_record_&quot;), as.numeric),
-  criminal_record_exact = criminal_record_year + criminal_record_month/12,
-  # create target variable
-  criminal_record = ifelse(date_last_move - criminal_record_exact &lt;= 2 &amp;
-                                date_last_move - criminal_record_exact &gt;= 0, 
-                              TRUE,
-                              FALSE)
-  ) </code></pre>
-</div>
-<div id="relationship-dissolution" class="section level5">
-<h5>Relationship dissolution</h5>
-<pre class="r"><code># check levels
-levels(as.factor(mars$relationship_dissolution_yeara_b))</code></pre>
-<pre><code>##  [1] &quot;&quot;           &quot;2001&quot;       &quot;2006&quot;       &quot;2007&quot;       &quot;2008&quot;      
-##  [6] &quot;2009&quot;       &quot;2010&quot;       &quot;2011&quot;       &quot;blank&quot;      &quot;don&#39;t know&quot;</code></pre>
-<pre class="r"><code># # for more extensive check
-# mars %&gt;% select(starts_with(&quot;relationship_dissolution&quot;)) %&gt;% 
-#   pivot_longer(everything()) %&gt;% 
-#   group_by(name, value) %&gt;% 
-#   count()</code></pre>
-<pre class="r"><code># define NA values
-NA_responses &lt;- c(&quot;&quot;, &quot;refused&quot;, &quot;blank&quot;, &quot;don&#39;t know&quot;)
-# mini function to assign NA&#39;s to values defined above
-recodeNAs &lt;- function(x) (ifelse (x %in% NA_responses, NA, x))
-
-# recode NAs
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(starts_with(&quot;relationship_dissolution&quot;), recodeNAs), 
-         # transform to numeric
-         across(starts_with(&quot;relationship_dissolution&quot;), as.numeric)
-         )</code></pre>
-<p>We calculate the exact date for each relationship ending</p>
-<pre class="r"><code># calculate exact age combining month and year
-exact_relationship &lt;- mars %&gt;% pivot_longer(starts_with(&quot;relationship_dissolution&quot;), 
-                      names_to = &quot;relationship&quot;, 
-                      values_to = &quot;date_relationship&quot;) %&gt;% 
-  # change the names of the variables slightly
-  mutate(relationship = gsub(&quot;(year|month)&quot;, &quot;\\1_&quot;, relationship), 
-         relationship = sub(&quot;_[^_]*$&quot;, &quot;&quot;, relationship)) %&gt;%
-  # split at last underscore
-  separate(col = relationship, into = c(&quot;date&quot;, &quot;pair&quot;), 
-           sep = &quot;_(?!.*_)&quot;, extra = &quot;merge&quot;)  %&gt;% 
-  select(id_case, date, pair, date_relationship, date_last_move) %&gt;% 
-  pivot_wider(names_from = date, values_from = date_relationship) %&gt;% 
-  # calculate all in years (divide months by 12)
-  mutate(relationship_dissolution_month = relationship_dissolution_month/12) %&gt;% 
-  rowwise() %&gt;% 
-  # calculate exact date
-  mutate(relationship_dissolution_date = sum(c_across(starts_with(&quot;relationship_dissolution&quot;)), na.rm = TRUE),
-         # recode NAs
-         relationship_dissolution_date  = ifelse(relationship_dissolution_date == 0, NA, 
-                                                 relationship_dissolution_date)
-         )</code></pre>
-<p>We retain only the date of the most recent relationship dissolution
-(which determines the variable, namely whether there was at least one
-dissolution within the last two years from the date of the last
-move).</p>
-<pre class="r"><code># compute age of youngest child
-recent_relationship &lt;- exact_relationship %&gt;%  
-  group_by(id_case) %&gt;% 
-    summarize(relationship_dissolution_date_most_recent = ifelse(all(is.na(relationship_dissolution_date)), 
-                                          NA, 
-                                          max(relationship_dissolution_date, 
-                                              na.rm = TRUE))) %&gt;% 
-  select(id_case, relationship_dissolution_date_most_recent)
-  
-
-# merge recent_child back into our data frame
-mars &lt;- left_join(mars, recent_relationship) %&gt;% 
-  # create target variable
-  mutate(relationship_dissolution = ifelse(
-    date_last_move - relationship_dissolution_date_most_recent &lt;= 2 &amp;
-      date_last_move - relationship_dissolution_date_most_recent &gt;= 0,
-    TRUE, FALSE))</code></pre>
-<pre><code>## Joining with `by = join_by(id_case)`</code></pre>
-</div>
-<div id="job-loss" class="section level5">
-<h5>Job loss</h5>
-<pre class="r"><code># check levels
-levels(as.factor(mars$job_loss_montha_a))</code></pre>
-<pre><code>##  [1] &quot;&quot;           &quot;1&quot;          &quot;10&quot;         &quot;11&quot;         &quot;12&quot;        
-##  [6] &quot;2&quot;          &quot;3&quot;          &quot;4&quot;          &quot;5&quot;          &quot;6&quot;         
-## [11] &quot;7&quot;          &quot;8&quot;          &quot;9&quot;          &quot;don&#39;t know&quot; &quot;refused&quot;</code></pre>
-<pre class="r"><code># # for more extensive check
-# mars %&gt;% select(starts_with(&quot;job_loss&quot;)) %&gt;% 
-#   pivot_longer(everything()) %&gt;% 
-#   group_by(name, value) %&gt;% 
-#   count()</code></pre>
-<pre class="r"><code># define NA values
-NA_responses &lt;- c(&quot;&quot;, &quot;refused&quot;, &quot;blank&quot;, &quot;don&#39;t know&quot;)
-# mini function to assign NA&#39;s to values defined above
-recodeNAs &lt;- function(x) (ifelse (x %in% NA_responses, NA, x))
-
-# recode NAs
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(starts_with(&quot;job_loss&quot;), recodeNAs), 
-         # transform to numeric
-         across(starts_with(&quot;job_loss&quot;), as.numeric)
-         )</code></pre>
-<p>We calculate the exact date for each job loss.</p>
-<pre class="r"><code># calculate exact age combining month and year
-exact_job_loss &lt;- mars %&gt;% pivot_longer(starts_with(&quot;job_loss&quot;), 
-                      names_to = &quot;job_loss&quot;, 
-                      values_to = &quot;date_job_loss&quot;) %&gt;% 
-  # change the names of the variables slightly
-  mutate(job_loss = gsub(&quot;(year|month)&quot;, &quot;\\1_&quot;, job_loss), 
-         job_loss = sub(&quot;_[^_]*$&quot;, &quot;&quot;, job_loss)) %&gt;%
-  # split at last underscore
-  separate(col = job_loss, into = c(&quot;date&quot;, &quot;pair&quot;), 
-           sep = &quot;_(?!.*_)&quot;, extra = &quot;merge&quot;)  %&gt;% 
-  select(id_case, date, pair, date_job_loss, date_last_move) %&gt;% 
-  pivot_wider(names_from = date, values_from = date_job_loss) %&gt;% 
-  # calculate all in years (divide months by 12)
-  mutate(job_loss_month = job_loss_month/12) %&gt;% 
-  rowwise() %&gt;% 
-  # calculate exact date
-  mutate(job_loss_date = sum(c_across(starts_with(&quot;job_loss&quot;)), na.rm = TRUE),
-         # recode NAs
-         job_loss_date  = ifelse(job_loss_date == 0, NA, 
-                                 job_loss_date)
-  )</code></pre>
-<p>We retain only the date of the most recent job loss (which determines
-the variable, namely whether there was at least one job loss within the
-last two years from the date of the last move).</p>
-<pre class="r"><code># compute age of youngest child
-recent_job_loss &lt;- exact_job_loss %&gt;%  
-  group_by(id_case) %&gt;% 
-    summarize(job_loss_date_most_recent = ifelse(all(is.na(job_loss_date)), 
-                                          NA, 
-                                          max(job_loss_date, 
-                                              na.rm = TRUE))) %&gt;% 
-  select(id_case, job_loss_date_most_recent)
-  
-
-# merge recent_child back into our data frame
-mars &lt;- left_join(mars, recent_job_loss) %&gt;% 
-  # create target variable
-  mutate(job_loss = ifelse(
-    date_last_move - job_loss_date_most_recent &lt;= 2 &amp;
-      date_last_move - job_loss_date_most_recent &gt;= 0,
-    TRUE, FALSE))</code></pre>
-<pre><code>## Joining with `by = join_by(id_case)`</code></pre>
-</div>
-<div id="benefits-loss" class="section level5">
-<h5>Benefits loss</h5>
-<pre class="r"><code># check levels
-levels(as.factor(mars$benefits_loss_montha_a))</code></pre>
-<pre><code>##  [1] &quot;&quot;           &quot;1&quot;          &quot;10&quot;         &quot;11&quot;         &quot;12&quot;        
-##  [6] &quot;2&quot;          &quot;3&quot;          &quot;4&quot;          &quot;5&quot;          &quot;6&quot;         
-## [11] &quot;7&quot;          &quot;8&quot;          &quot;9&quot;          &quot;blank&quot;      &quot;don&#39;t know&quot;</code></pre>
-<pre class="r"><code># # for more extensive check
-# mars %&gt;% select(starts_with(&quot;benefits_loss&quot;)) %&gt;% 
-#   pivot_longer(everything()) %&gt;% 
-#   group_by(name, value) %&gt;% 
-#   count()</code></pre>
-<pre class="r"><code># define NA values
-NA_responses &lt;- c(&quot;&quot;, &quot;refused&quot;, &quot;blank&quot;, &quot;don&#39;t know&quot;)
-# mini function to assign NA&#39;s to values defined above
-recodeNAs &lt;- function(x) (ifelse (x %in% NA_responses, NA, x))
-
-# recode NAs
-mars &lt;- mars %&gt;% 
-  # make sure answers written to lower case
-  mutate(across(starts_with(&quot;benefits_loss&quot;), recodeNAs), 
-         # transform to numeric
-         across(starts_with(&quot;benefits_loss&quot;), as.numeric)
-         )</code></pre>
-<p>We calculate the exact date for each benefits loss.</p>
-<pre class="r"><code># calculate exact age combining month and year
-exact_benefits_loss &lt;- mars %&gt;% pivot_longer(starts_with(&quot;benefits_loss&quot;), 
-                      names_to = &quot;benefits_loss&quot;, 
-                      values_to = &quot;date_benefits_loss&quot;) %&gt;% 
-  # change the names of the variables slightly
-  mutate(benefits_loss = gsub(&quot;(year|month)&quot;, &quot;\\1_&quot;, benefits_loss), 
-         benefits_loss = sub(&quot;_[^_]*$&quot;, &quot;&quot;, benefits_loss)) %&gt;%
-  # split at last underscore
-  separate(col = benefits_loss, into = c(&quot;date&quot;, &quot;pair&quot;), 
-           sep = &quot;_(?!.*_)&quot;, extra = &quot;merge&quot;)  %&gt;% 
-  select(id_case, date, pair, date_benefits_loss, date_last_move) %&gt;% 
-  pivot_wider(names_from = date, values_from = date_benefits_loss) %&gt;% 
-  # calculate all in years (divide months by 12)
-  mutate(benefits_loss_month = benefits_loss_month/12) %&gt;% 
-  rowwise() %&gt;% 
-  # calculate exact date
-  mutate(benefits_loss_date = sum(c_across(starts_with(&quot;benefits_loss&quot;)), na.rm = TRUE),
-         # recode NAs
-         benefits_loss_date  = ifelse(benefits_loss_date == 0, NA, 
-                                 benefits_loss_date)
-  )</code></pre>
-<p>We retain only the date of the most recent benefits loss (which
-determines the variable, namely whether there was at least one benefits
-loss within the last two years from the date of the last move).</p>
-<pre class="r"><code># compute age of youngest child
-recent_benefits_loss &lt;- exact_benefits_loss %&gt;%  
-  group_by(id_case) %&gt;% 
-    summarize(benefits_loss_date_most_recent = ifelse(all(is.na(benefits_loss_date)), 
-                                          NA, 
-                                          max(benefits_loss_date, 
-                                              na.rm = TRUE))) %&gt;% 
-  select(id_case, benefits_loss_date_most_recent)
-  
-
-# merge recent_child back into our data frame
-mars &lt;- left_join(mars, recent_benefits_loss) %&gt;% 
-  # create target variable
-  mutate(benefits_loss = ifelse(
-    date_last_move - benefits_loss_date_most_recent &lt;= 2 &amp;
-      date_last_move - benefits_loss_date_most_recent &gt;= 0,
-    TRUE, FALSE))</code></pre>
-<pre><code>## Joining with `by = join_by(id_case)`</code></pre>
+<div id="read-cleaned-data" class="section level3">
+<h3>Read cleaned data</h3>
 <pre class="r"><code># export cleaned file
-write_csv(mars, &quot;data/cleaned_mars.csv&quot;)</code></pre>
-</div>
-</div>
-</div>
-<div id="american-community-survey-acs" class="section level3">
-<h3>American Community Survey (ACS)</h3>
-<div id="acs-5-year-wisconsin-block-groups-by-seq-table" class="section level4">
-<h4>ACS 5-year Wisconsin block groups by seq table</h4>
-<pre class="r"><code>acs_data &lt;- read.csv(&quot;./data/e20105wi0047000.txt&quot;, header=F)</code></pre>
-<p>Add ACS column labels</p>
-<pre class="r"><code>labels &lt;- read_excel(&quot;./data/Seq47.xls&quot;)
-colnames(acs_data) &lt;- labels %&gt;% colnames()</code></pre>
-</div>
-<div id="acs-5-year-wisconsin-geographies" class="section level4">
-<h4>ACS 5-year Wisconsin Geographies</h4>
-<pre class="r"><code>acs_geo &lt;- read.csv(&quot;./data/g20105wi.csv&quot;, header = F) %&gt;%
-  rename(LOGRECNO = V5,
-         GEOID = V49
-         ) %&gt;%
-  select(c(&quot;LOGRECNO&quot;,&quot;GEOID&quot;)) %&gt;% 
-  #convert GEOID to 12-digit FIPS
-  mutate(GEOID = substr(GEOID,8,20))</code></pre>
-<div id="clean-and-subset-acs-data-compute-poverty-variable" class="section level5">
-<h5>Clean and subset ACS data &amp; Compute poverty variable</h5>
-<pre class="r"><code>acs_data &lt;- acs_data %&gt;% 
-  mutate(across(starts_with(&quot;B1&quot;), as.numeric)) %&gt;% 
-  pivot_longer(starts_with(&quot;B1&quot;), names_to = &quot;name&quot;, values_to = &quot;value&quot;) %&gt;% 
-  separate_wider_delim(name, delim = &quot;_&quot;, names = c(&quot;year&quot;, &quot;measure&quot;)) %&gt;% 
-  filter(str_detect(measure, &quot;001|002&quot;), !str_detect(year, &quot;[A-Z]+$&quot;)) %&gt;% 
-  mutate(measure = ifelse(measure == &quot;001&quot;, &quot;overall_population&quot;, 
-                          &quot;population_in_poverty&quot;)) %&gt;% 
-  pivot_wider(names_from = measure, values_from = value) %&gt;% 
-  mutate(poverty = population_in_poverty/overall_population, 
-         year = str_extract(year, &quot;\\d{2}$&quot;)) %&gt;% 
-  select(LOGRECNO, year, poverty) %&gt;% 
-  pivot_wider(names_from = year, values_from = poverty, 
-              names_prefix = &quot;poverty&quot;
-              )</code></pre>
-<pre><code>## Warning: There were 3 warnings in `mutate()`.
-## The first warning was:
-## ℹ In argument: `across(starts_with(&quot;B1&quot;), as.numeric)`.
-## Caused by warning:
-## ! NAs introduced by coercion
-## ℹ Run `dplyr::last_dplyr_warnings()` to see the 2 remaining warnings.</code></pre>
-<pre class="r"><code># Unite data and geo info to long format data
-acs &lt;- left_join(acs_data, acs_geo, by=&quot;LOGRECNO&quot;) </code></pre>
-<pre class="r"><code># export cleaned file
-write_csv(acs, &quot;data/cleaned_acs.csv&quot;)</code></pre>
-</div>
-</div>
-</div>
-<div id="combined-data" class="section level3">
-<h3>Combined data</h3>
-<pre class="r"><code>#append ACS variables to MARS data
-#for current address
-data &lt;- left_join(mars, acs, by=c(&quot;current_address&quot; = &quot;GEOID&quot;), suffix = c(&quot;&quot;, &quot;current&quot;)) %&gt;% 
-  rename_with(~ paste0(.x, &quot;_current&quot;), starts_with(&quot;poverty&quot;))
-
-# for past address
-data &lt;- left_join(data, acs, by=c(&quot;previous_address&quot; = &quot;GEOID&quot;)) %&gt;% 
-   rename_with(~ paste0(.x, &quot;_previous&quot;), starts_with(&quot;poverty&quot;) &amp; 
-                 !ends_with(&quot;current&quot;))
-
-# compute mean values
-data &lt;- data %&gt;% 
-  rowwise() %&gt;%
-  mutate(poverty_current = mean(c_across(starts_with(&quot;poverty&quot;) &amp; 
-                                 ends_with(&quot;current&quot;)), 
-                      na.rm = TRUE),
-         poverty_previous = mean(c_across(starts_with(&quot;poverty&quot;) &amp; 
-                                 ends_with(&quot;previous&quot;)), 
-                      na.rm = TRUE)) 
-
-# # check whether different years make a difference
-# plot_data &lt;- data %&gt;% 
-#   pivot_longer(starts_with(&quot;poverty&quot;), 
-#                names_to = &quot;year_time&quot;, 
-#                values_to = &quot;poverty&quot;) %&gt;% 
-#   separate_wider_delim(year_time, delim = &quot;_&quot;, names = c(&quot;year&quot;, &quot;time&quot;)) %&gt;% 
-#   mutate(year = str_extract(year, &quot;\\d{2}$&quot;)) #%&gt;% 
-#   pivot_wider(names_from = time, values_from = value)
-# 
-# ggplot(plot_data, aes(x = poverty, fill = as.factor(year))) + 
-#   geom_density(alpha = 0.5) + 
-#   facet_wrap(~time) # appear to only be values for 2010 available
-
-
-# reduce data to target variables
-data &lt;- data %&gt;% 
-  select(c(all_of(variables), id_case)) %&gt;% 
-  mutate(weight = as.numeric(weight))</code></pre>
-<pre class="r"><code># export cleaned file
-write_csv(data, &quot;data/cleaned_data_combined.csv&quot;)</code></pre>
+data &lt;- read_csv(&quot;data/cleaned_data_combined.csv&quot;) %&gt;% 
+  mutate(move_reason = relevel(as.factor(move_reason), ref = &quot;voluntary/NA&quot;))</code></pre>
 </div>
 <div id="impute-nas" class="section level3">
 <h3>Impute NAs</h3>
 <pre class="r"><code>#impute NAs
-library(mice)
 # make various samples
 data_imputed_NAs &lt;- mice(data,
                 m=15,
                 seed=12345)</code></pre>
 <pre><code>## 
 ##  iter imp variable
-##   1   1  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   2  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   3  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   4  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   5  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   6  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   7  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   8  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   9  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   10  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   11  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   12  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   13  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   14  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   1   15  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   1  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   2  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   3  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   4  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   5  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   6  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   7  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   8  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   9  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   10  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   11  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   12  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   13  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   14  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   2   15  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   1  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   2  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   3  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   4  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   5  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   6  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   7  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   8  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   9  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   10  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   11  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   12  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   13  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   14  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   3   15  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   1  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   2  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   3  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   4  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   5  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   6  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   7  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   8  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   9  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   10  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   11  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   12  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   13  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   14  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   4   15  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   1  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   2  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   3  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   4  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   5  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   6  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   7  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   8  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   9  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   10  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   11  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   12  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   13  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   14  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
-##   5   15  poverty_current  race  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous</code></pre>
+##   1   1  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   2  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   3  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   4  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   5  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   6  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   7  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   8  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   9  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   10  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   11  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   12  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   13  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   14  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   1   15  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   1  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   2  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   3  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   4  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   5  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   6  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   7  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   8  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   9  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   10  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   11  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   12  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   13  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   14  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   2   15  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   1  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   2  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   3  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   4  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   5  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   6  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   7  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   8  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   9  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   10  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   11  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   12  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   13  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   14  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   3   15  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   1  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   2  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   3  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   4  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   5  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   6  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   7  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   8  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   9  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   10  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   11  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   12  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   13  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   14  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   4   15  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   1  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   2  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   3  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   4  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   5  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   6  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   7  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   8  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   9  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   10  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   11  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   12  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   13  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   14  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous
+##   5   15  poverty_current  age  housing_assistance  single_mom  criminal_record  recent_child  relationship_dissolution  job_loss  benefits_loss  poverty_previous</code></pre>
 <pre><code>## Warning: Number of logged events: 76</code></pre>
 </div>
-</div>
-<div id="analysis" class="section level2">
-<h2>Analysis</h2>
-<p>Without imputed NAs, model cannot run</p>
-<pre class="r"><code>model &lt;- lm(poverty_current ~ move_reason +
-              race +
-              age +
-              education_less_than_highschool +
-              education_highschool +
-              housing_assistance +
-              single_mom +
-              criminal_record +
-              recent_child +
-              relationship_dissolution +
-              job_loss +
-              benefits_loss +
-              poverty_previous, 
-            data = data)</code></pre>
-<p>Run simple model without controls.</p>
-<pre class="r"><code>model &lt;- lm(poverty_current ~ move_reason, 
-            data = data,
-            weights=weight)
-summary(model)</code></pre>
-<pre><code>## 
-## Call:
-## lm(formula = poverty_current ~ move_reason, data = data, weights = weight)
-## 
-## Weighted Residuals:
-##     Min      1Q  Median      3Q     Max 
-## -4.8088 -0.4788  0.4172  1.6850  6.1089 
-## 
-## Coefficients:
-##                        Estimate Std. Error t value Pr(&gt;|t|)    
-## (Intercept)            0.121284   0.007766   15.62   &lt;2e-16 ***
-## move_reasonforced      0.032260   0.018124    1.78   0.0756 .  
-## move_reasonresponsive -0.013027   0.014309   -0.91   0.3630    
-## ---
-## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1
-## 
-## Residual standard error: 1.813 on 569 degrees of freedom
-##   (8 observations deleted due to missingness)
-## Multiple R-squared:  0.00875,    Adjusted R-squared:  0.005266 
-## F-statistic: 2.511 on 2 and 569 DF,  p-value: 0.08206</code></pre>
+<div id="analyse" class="section level3">
+<h3>Analyse</h3>
 <p>Run final model with imputed values</p>
 <pre class="r"><code>models &lt;- with(data_imputed_NAs, 
                lm(poverty_current ~ move_reason +
@@ -1522,61 +485,51 @@ summary(model)</code></pre>
                     housing_assistance +
                     single_mom +
                     criminal_record +
-                    recent_child +
-                    relationship_dissolution +
-                    job_loss +
-                    benefits_loss +
-                    poverty_previous, 
+                    recent_child, 
                   weights=weight))
 
-result &lt;- pool(models)</code></pre>
-<div id="result-table" class="section level3">
-<h3>Result table</h3>
-<pre class="r"><code>summary(result)</code></pre>
-<pre><code>##                                  term      estimate  std.error  statistic
-## 1                         (Intercept)  0.1106213952 0.08617637  1.2836628
-## 2                   move_reasonforced  0.0200851353 0.02325129  0.8638288
-## 3               move_reasonresponsive  0.0112604009 0.02129998  0.5286578
-## 4                           raceblack  0.0738476472 0.02407087  3.0679259
-## 5                        racehispanic  0.0050483218 0.02850295  0.1771158
-## 6                                 age  0.0006309446 0.00150124  0.4202824
-## 7  education_less_than_highschoolTRUE -0.0103721031 0.03986157 -0.2602031
-## 8            education_highschoolTRUE -0.0207929105 0.01776745 -1.1702813
-## 9                  housing_assistance  0.0243650046 0.04534425  0.5373339
-## 10                         single_mom  0.0262747212 0.03009874  0.8729508
-## 11                    criminal_record -0.0686606672 0.03787727 -1.8127145
-## 12                       recent_child  0.0270668056 0.03622749  0.7471345
-## 13           relationship_dissolution  0.0056486005 0.03202707  0.1763696
-## 14                           job_loss -0.0184028846 0.04984513 -0.3692013
-## 15                      benefits_loss  0.0074973760 0.06948391  0.1079009
-## 16                   poverty_previous  0.0281729099 0.05957607  0.4728897
-##          df     p.value
-## 1  14.55607 0.219318980
-## 2  66.56496 0.390783987
-## 3  47.91474 0.599483250
-## 4  33.05916 0.004280931
-## 5  34.25855 0.860460474
-## 6  16.51322 0.679697216
-## 7  39.66158 0.796053280
-## 8  47.97872 0.247668077
-## 9  24.82503 0.595821122
-## 10 33.37477 0.388927508
-## 11 16.63887 0.087958107
-## 12 17.20610 0.465070770
-## 13 16.39404 0.862163946
-## 14 11.94892 0.718437148
-## 15 10.41883 0.916124041
-## 16 26.99625 0.640093001</code></pre>
-</div>
-<div id="main-result" class="section level3">
-<h3>Main result</h3>
-<pre class="r"><code>result %&gt;% 
+result &lt;- pool(models) %&gt;% 
   tidy() %&gt;% 
-  mutate_if(is.numeric, round, digits = 4) %&gt;% 
-  filter(term == &quot;move_reasonforced&quot;) %&gt;% 
+  mutate_if(is.numeric, round, digits = 4)</code></pre>
+</div>
+<div id="results" class="section level3">
+<h3>Results</h3>
+<div id="table" class="section level4">
+<h4>Table</h4>
+<pre class="r"><code>result</code></pre>
+<pre><code>##                                  term estimate std.error statistic p.value
+## 1                         (Intercept)   0.1584    0.0440    3.6032  0.0013
+## 2                   move_reasonforced   0.0195    0.0251    0.7759  0.4420
+## 3               move_reasonresponsive   0.0097    0.0176    0.5527  0.5819
+## 4                        racehispanic  -0.0678    0.0200   -3.3979  0.0009
+## 5                           raceother  -0.0834    0.0164   -5.0906  0.0000
+## 6                                 age   0.0011    0.0009    1.1944  0.2428
+## 7  education_less_than_highschoolTRUE  -0.0079    0.0317   -0.2495  0.8035
+## 8            education_highschoolTRUE  -0.0233    0.0173   -1.3426  0.1856
+## 9                  housing_assistance   0.0250    0.0301    0.8308  0.4082
+## 10                         single_mom   0.0240    0.0239    1.0013  0.3200
+## 11                    criminal_record  -0.0556    0.0493   -1.1278  0.2817
+## 12                       recent_child   0.0337    0.0274    1.2266  0.2325
+##         b       df dfcom    fmi lambda  m     riv  ubar
+## 1  0.0012  25.4864   567 0.7079 0.6859 15  2.1835 6e-04
+## 2  0.0003  43.4456   567 0.5409 0.5202 15  1.0842 3e-04
+## 3  0.0001  87.2199   567 0.3643 0.3499 15  0.5381 2e-04
+## 4  0.0001 151.9698   567 0.2534 0.2436 15  0.3221 3e-04
+## 5  0.0001  87.5542   567 0.3634 0.3491 15  0.5362 2e-04
+## 6  0.0000  26.8293   567 0.6908 0.6686 15  2.0176 0e+00
+## 7  0.0003 108.0964   567 0.3188 0.3063 15  0.4415 7e-04
+## 8  0.0001  49.0050   567 0.5069 0.4872 15  0.9501 2e-04
+## 9  0.0003  91.8256   567 0.3530 0.3391 15  0.5130 6e-04
+## 10 0.0002  73.4824   567 0.4034 0.3874 15  0.6324 4e-04
+## 11 0.0021  11.8816   567 0.9340 0.9238 15 12.1152 2e-04
+## 12 0.0005  22.7358   567 0.7464 0.7250 15  2.6367 2e-04</code></pre>
+</div>
+<div id="main-result" class="section level4">
+<h4>Main result</h4>
+<pre class="r"><code>result %&gt;% filter(term == &quot;move_reasonforced&quot;) %&gt;% 
   select(term, estimate, std.error, statistic, p.value)</code></pre>
 <pre><code>##                term estimate std.error statistic p.value
-## 1 move_reasonforced   0.0201    0.0233    0.8638  0.3908</code></pre>
+## 1 move_reasonforced   0.0195    0.0251    0.7759   0.442</code></pre>
 </div>
 </div>
 

@@ -1029,10 +1029,23 @@ models <- with(data_imputed_NAs,
                   weights=weight))
 
 result <- pool(models)
+```
+
+### Result table
+
+```{r}
 summary(result)
 ```
 
+### Main result
 
+```{r}
+result %>% 
+  tidy() %>% 
+  mutate_if(is.numeric, round, digits = 4) %>% 
+  filter(term == "move_reasonforced") %>% 
+  select(term, estimate, std.error, statistic, p.value)
+```
 
 
 

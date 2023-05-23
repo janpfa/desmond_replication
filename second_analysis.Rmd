@@ -1,0 +1,85 @@
+---
+title: 'Second Analysis: Replication Desmond 2015'
+author: "Jan Pfänder"
+date: "2023-05-23"
+output:
+  html_document:
+    keep_md: yes
+  pdf_document: default
+---
+
+```{r packages, message=FALSE, warning=FALSE}
+# load required packages
+library("tidyverse")
+library("readxl") 
+library("mice")
+```
+
+The instructions for the second analysis are:
+
+> *"Your analysis should produce a single, main result in terms of statistical families of z-, t-, F-, or χ² tests (or their alternative or non-parametric versions). \n You should control for Black Renter, Hispanic Renter, Other Ethnicity Renter Age, Less Than High School Education,High School/GED, Housing Assistance in Past Residence Single-Mother Household in Past Residence Criminal Record Before Move ,Had a Child in Previous 2 Years"*
+
+Following these instructions, I will proceed as for the first analysis, but this time *leaving out* the following control variables:
+
+- relationship_dissolution 
+- job_loss 
+- benefits_loss 
+- poverty_previous
+
+### Read cleaned data
+
+```{r, message=FALSE}
+# export cleaned file
+data <- read_csv("data/cleaned_data_combined.csv") %>% 
+  mutate(move_reason = relevel(as.factor(move_reason), ref = "voluntary/NA"))
+```
+
+### Impute NAs
+
+```{r}
+#impute NAs
+# make various samples
+data_imputed_NAs <- mice(data,
+                m=15,
+                seed=12345)
+```
+
+### Analyse
+
+Run final model with imputed values
+```{r}
+models <- with(data_imputed_NAs, 
+               lm(poverty_current ~ move_reason +
+                    race +
+                    age +
+                    education_less_than_highschool +
+                    education_highschool +
+                    housing_assistance +
+                    single_mom +
+                    criminal_record +
+                    recent_child, 
+                  weights=weight))
+
+result <- pool(models) %>% 
+  tidy() %>% 
+  mutate_if(is.numeric, round, digits = 4)
+```
+
+### Results
+
+#### Table
+
+```{r}
+result
+```
+
+#### Main result
+
+```{r}
+result %>% filter(term == "move_reasonforced") %>% 
+  select(term, estimate, std.error, statistic, p.value)
+```
+
+
+
+
